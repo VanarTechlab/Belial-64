@@ -54,6 +54,11 @@ struct SaveWriter {
 	{
 	}
 
+	SaveWriter(std::string &&dir, bool /*carryForward*/)
+	    : SaveWriter(std::move(dir))
+	{
+	}
+
 	bool WriteFile(const char *filename, const std::byte *data, size_t size);
 
 	bool HasFile(const char *path)

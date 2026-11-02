@@ -39,6 +39,10 @@ elseif(WIN32)
   include(platforms/windows)
 endif()
 
+if(N64)
+  include(platforms/n64)
+endif()
+
 if(NINTENDO_SWITCH)
   include(platforms/switch)
 endif()
