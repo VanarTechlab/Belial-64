@@ -182,6 +182,10 @@ void mainmenu_loop()
 				done = true;
 			break;
 		case MAINMENU_ATTRACT_MODE:
+#ifdef __N64__
+			// N64: sin cinematicas todavia (el video de la intro a los 30 s en el menu agotaba la memoria)
+			break;
+#endif
 			if (gbIsSpawn && !HaveIntro())
 				done = false;
 			else if (gbActive)

@@ -38,6 +38,13 @@ void play_movie(const char *pszMovie, bool userCanClose)
 {
 	if (demo::IsRunning())
 		return;
+#ifdef __N64__
+	// N64 (f2v27): las cinematicas aun no estan hechas (iran desde la SD); reproducirlas con
+	// libsmackerdec pide mas memoria de la que hay y el juego se caia.
+	(void)pszMovie;
+	(void)userCanClose;
+	return;
+#endif
 
 	// Video playback requires the SDL video subsystem, which HeadlessMode
 	// intentionally does not initialize.
