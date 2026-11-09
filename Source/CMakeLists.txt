@@ -1216,3 +1216,15 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_link_libraries(libdevilutionx PUBLIC c++fs)
   endif()
 endif()
+
+# N64: el dibujo es lo mas caro; se optimiza para velocidad (el resto, para tamano)
+if(N64)
+  set_source_files_properties(
+    engine/render/clx_render.cpp
+    engine/render/dun_render.cpp
+    engine/render/light_render.cpp
+    engine/render/scrollrt.cpp
+    engine/render/primitive_render.cpp
+    engine/render/text_render.cpp
+    PROPERTIES COMPILE_OPTIONS "-O2")
+endif()
