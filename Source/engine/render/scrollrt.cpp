@@ -90,6 +90,38 @@
 
 namespace devilution {
 
+#ifdef __N64__
+extern "C" void n64_panel_attach(uint8_t *pixels, int pitch, int rows, int panelRow);
+extern "C" void n64_panel_frame(void);
+extern "C" unsigned n64_panel_serial(void);
+void CalculatePanelAreas();
+namespace {
+// Capa del panel (f2v26): 640x160, el panel ocupa las filas 32..159 y encima queda sitio
+// para la parte de arriba de los frascos. Las coordenadas son las de la pantalla (las del
+// panel logico), desplazadas para caer en esta capa.
+constexpr int N64PanelLayerRows = 160;
+constexpr int N64PanelRow = 32;
+SDL_Surface *n64PanelSurface;
+Surface N64PanelOut(const Surface &out)
+{
+	if (gnScreenWidth >= GetMainPanel().size.width)
+		return out;
+	if (n64PanelSurface == nullptr) {
+		n64PanelSurface = SDL_CreateRGBSurface(0, 640, N64PanelLayerRows, 8, 0, 0, 0, 0);
+		if (n64PanelSurface == nullptr)
+			return out;
+		memset(n64PanelSurface->pixels, 0, static_cast<size_t>(n64PanelSurface->pitch) * N64PanelLayerRows);
+		n64_panel_attach(static_cast<uint8_t *>(n64PanelSurface->pixels), n64PanelSurface->pitch, N64PanelLayerRows, N64PanelRow);
+	}
+	const Point pos = GetMainPanel().position;
+	// at(x, y) = pixels + (region.x + x) + pitch * (region.y + y): el punto pos cae en (pos.x + rx, N64PanelRow)
+	const int rx = -pos.x;
+	const int ry = N64PanelRow - pos.y;
+	return Surface(n64PanelSurface, MakeSdlRect(rx, ry, 640 - rx, pos.y + GetMainPanel().size.height));
+}
+} // namespace
+#endif
+
 enum OutlineColors : uint8_t {
 	OutlineColorsPlayer1 = (PAL16_ORANGE + 7),
 	OutlineColorsPlayer2 = (PAL16_YELLOW + 7),
@@ -1453,10 +1485,24 @@ void DrawView(const Surface &out, Point startPosition)
 	DrawPlrMsg(out);
 	gmenu_draw(out);
 	doom_draw(out);
+#ifdef __N64__
+	{
+		const Surface panelOut = N64PanelOut(out);
+		if (panelOut.surface != out.surface && n64PanelSurface != nullptr) {
+			// encima del panel: transparente (indice 0) salvo lo que dibujen los frascos
+			memset(n64PanelSurface->pixels, 0, static_cast<size_t>(n64PanelSurface->pitch) * N64PanelRow);
+		}
+		DrawInfoBox(panelOut);
+		UpdateLifeManaPercent(); // Update life/mana totals before rendering any portion of the flask.
+		DrawLifeFlaskUpper(panelOut);
+		DrawManaFlaskUpper(panelOut);
+	}
+#else
 	DrawInfoBox(out);
 	UpdateLifeManaPercent(); // Update life/mana totals before rendering any portion of the flask.
 	DrawLifeFlaskUpper(out);
 	DrawManaFlaskUpper(out);
+#endif
 }
 
 /**
@@ -1895,6 +1941,21 @@ void DrawAndBlit()
 
 	const Surface &out = GlobalBackBuffer();
 	UndrawCursor(out);
+#ifdef __N64__
+	{
+		// L+R+C arriba/abajo cambia el tamano del panel: recalcular el hueco del mundo
+		static unsigned n64PanelSerialSeen;
+		if (n64_panel_serial() != n64PanelSerialSeen) {
+			n64PanelSerialSeen = n64_panel_serial();
+			CalculatePanelAreas();
+			RedrawEverything();
+		}
+	}
+	const Surface panelOut = N64PanelOut(out);
+	n64_panel_frame();
+#else
+	const Surface &panelOut = out;
+#endif
 
 	nthread_UpdateProgressToNextGameTick();
 
@@ -1911,41 +1972,41 @@ void DrawAndBlit()
 		n64_lua_check("tras DrawView");
 #endif
 	if (drawCtrlPan) {
-		DrawMainPanel(out);
+		DrawMainPanel(panelOut);
 	}
 	N64_GUARD("tras DrawMainPanel");
 
 	if (drawHealth) {
-		DrawLifeFlaskLower(out, !drawCtrlPan);
+		DrawLifeFlaskLower(panelOut, !drawCtrlPan);
 	}
 	N64_GUARD("tras DrawLifeFlaskLower");
 
 	if (drawMana) {
-		DrawManaFlaskLower(out, !drawCtrlPan);
+		DrawManaFlaskLower(panelOut, !drawCtrlPan);
 
-		DrawSpell(out);
+		DrawSpell(panelOut);
 	}
 	N64_GUARD("tras DrawSpell");
 
 	if (drawControlButtons) {
-		DrawMainPanelButtons(out);
+		DrawMainPanelButtons(panelOut);
 	}
 	N64_GUARD("tras DrawMainPanelButtons");
 
 	if (drawBelt) {
-		DrawInvBelt(out);
+		DrawInvBelt(panelOut);
 	}
 	N64_GUARD("tras DrawInvBelt");
 
 	if (drawChatInput) {
-		DrawChatBox(out);
+		DrawChatBox(panelOut);
 	}
-	DrawXPBar(out);
+	DrawXPBar(panelOut);
 	N64_GUARD("tras DrawXPBar");
 	if (*GetOptions().Gameplay.showHealthValues)
-		DrawFlaskValues(out, { mainPanel.position.x + 134, mainPanel.position.y + 28 }, MyPlayer->_pHitPoints.whole(), MyPlayer->_pMaxHP.whole());
+		DrawFlaskValues(panelOut, { mainPanel.position.x + 134, mainPanel.position.y + 28 }, MyPlayer->_pHitPoints.whole(), MyPlayer->_pMaxHP.whole());
 	if (*GetOptions().Gameplay.showManaValues)
-		DrawFlaskValues(out, { mainPanel.position.x + mainPanel.size.width - 138, mainPanel.position.y + 28 },
+		DrawFlaskValues(panelOut, { mainPanel.position.x + mainPanel.size.width - 138, mainPanel.position.y + 28 },
 		    (HasAnyOf(InspectPlayer->_pIFlags, ItemSpecialEffect::NoMana) || MyPlayer->hasNoMana()) ? 0 : MyPlayer->_pMana.whole(),
 		    HasAnyOf(InspectPlayer->_pIFlags, ItemSpecialEffect::NoMana) ? 0 : MyPlayer->_pMaxMana.whole());
 	if (*GetOptions().Gameplay.floatingInfoBox)

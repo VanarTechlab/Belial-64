@@ -238,6 +238,9 @@ bool IsLevelUpButtonVisible()
 
 } // namespace
 
+#ifdef __N64__
+extern "C" int n64_panel_game_rows(int screenHeight);
+#endif
 void CalculatePanelAreas()
 {
 	constexpr Size MainPanelSize { 640, 128 };
@@ -246,6 +249,12 @@ void CalculatePanelAreas()
 		{ (gnScreenWidth - MainPanelSize.width) / 2, gnScreenHeight - MainPanelSize.height },
 		MainPanelSize
 	};
+#ifdef __N64__
+	// N64 (f2v26): el panel se dibuja en una capa aparte (scrollrt.cpp, N64PanelOut) que el RDP
+	// pone reducida abajo; desde x=88 del panel (frasco de vida) hasta el final.
+	if (gnScreenWidth < MainPanelSize.width)
+		MainPanel.position.x = -88;
+#endif
 	LeftPanel = {
 		{ 0, 0 },
 		SidePanelSize
@@ -272,7 +281,15 @@ void CalculatePanelAreas()
 	RightPanel.position.y = LeftPanel.position.y;
 
 	gnViewportHeight = gnScreenHeight;
+#ifdef __N64__
+	// N64: el mundo llega hasta donde empieza el panel reducido (el resto no se dibuja: mas rapido)
+	if (gnScreenWidth < MainPanel.size.width) {
+		gnViewportHeight -= n64_panel_game_rows(gnScreenHeight);
+	}
+	if (false) {
+#else
 	if (gnScreenWidth <= MainPanel.size.width) {
+#endif
 		// Part of the screen is fully obscured by the UI
 		gnViewportHeight -= MainPanel.size.height;
 	}
