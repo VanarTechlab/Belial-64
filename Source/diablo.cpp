@@ -870,6 +870,8 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 
 #ifdef __N64__
 extern "C" void n64_lua_check(const char *where);
+extern "C" unsigned n64_us(void);
+extern "C" void n64_prof_add(int which, unsigned us);
 #endif
 void RunGameLoop(interface_mode uMsg)
 {
@@ -957,8 +959,14 @@ void RunGameLoop(interface_mode uMsg)
 
 		ProcessGameMessagePackets();
 		this_sdl_thread::yield();
+#ifdef __N64__
+		const unsigned n64T0 = n64_us();
+#endif
 		if (game_loop(gbGameLoopStartup))
 			diablo_color_cyc_logic();
+#ifdef __N64__
+		n64_prof_add(0, n64_us() - n64T0);
+#endif
 		gbGameLoopStartup = false;
 		if (drawGame)
 			DrawAndBlit();

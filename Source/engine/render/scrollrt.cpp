@@ -1838,6 +1838,14 @@ void scrollrt_draw_game_screen()
 
 #ifdef __N64__
 extern "C" void n64_lua_check(const char *where);
+extern "C" unsigned n64_us(void);
+extern "C" void n64_prof_add(int which, unsigned us);
+namespace {
+struct N64BlitTimer {
+	unsigned t0 = n64_us();
+	~N64BlitTimer() { n64_prof_add(2, n64_us() - t0); }
+};
+} // namespace
 extern "C" int n64_check_guards(const char *where);
 static int n64DrawChecks;
 #define N64_GUARD(name) \
@@ -1855,6 +1863,7 @@ void DrawAndBlit()
 		return;
 	}
 #ifdef __N64__
+	N64BlitTimer n64BlitTimer;
 	if (n64DrawChecks < 3)
 		n64_lua_check("inicio de DrawAndBlit");
 #endif
@@ -1890,7 +1899,13 @@ void DrawAndBlit()
 	nthread_UpdateProgressToNextGameTick();
 
 	this_sdl_thread::yield();
+#ifdef __N64__
+	const unsigned n64T0 = n64_us();
+#endif
 	DrawView(out, ViewPosition);
+#ifdef __N64__
+	n64_prof_add(1, n64_us() - n64T0);
+#endif
 #ifdef __N64__
 	if (n64DrawChecks < 3)
 		n64_lua_check("tras DrawView");
