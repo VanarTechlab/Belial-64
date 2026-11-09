@@ -36,6 +36,7 @@
 #include "controls/keymapper.hpp"
 #include "controls/plrctrls.h"
 #include "controls/remap_keyboard.h"
+#include "utils/endian_swap.hpp"
 #include "diablo.h"
 #include "diablo_msg.hpp"
 #include "discord/discord.h"
@@ -1359,13 +1360,63 @@ void DiabloDeinit()
 		SDL_Quit();
 }
 
+#ifdef __N64__
+extern "C" void n64_raw_begin(void);
+extern "C" bool n64_raw_write(const void *data, uint32_t size);
+extern "C" void n64_raw_end(void);
+// N64: el CEL original (2 MB en el pueblo) no cabe entero en la RAM. Se copia a la memoria
+// del cartucho a trozos y en la RAM solo queda su tabla de posiciones; ReencodeDungeonCels
+// lee cada trozo del cartucho (ver reencode_dun_cels.cpp y sdl_n64.c).
+std::expected<std::unique_ptr<std::byte[]>, std::string> LoadDungeonCelsToCart(const char *path)
+{
+	size_t size;
+	AssetHandle handle = OpenAsset(path, size);
+	if (!handle.ok())
+		return std::unexpected(FailedToOpenFileErrorMessage(path, handle.error()));
+	alignas(16) static std::byte chunk[16384];
+	if (size < 8 || !handle.read(chunk, 4))
+		return std::unexpected(StrCat("CEL demasiado corto: ", path));
+	const uint32_t count = Swap32LE(*reinterpret_cast<const uint32_t *>(chunk));
+	const size_t tableSize = (static_cast<size_t>(count) + 2) * 4;
+	if (tableSize > size)
+		return std::unexpected(StrCat("CEL con tabla invalida: ", path));
+	std::unique_ptr<std::byte[]> table { new std::byte[tableSize] };
+	std::memcpy(table.get(), chunk, 4);
+	if (!handle.read(table.get() + 4, tableSize - 4))
+		return std::unexpected("handle.read failed");
+	n64_raw_begin();
+	// la tabla tambien va al cartucho, para que las posiciones coincidan con el archivo
+	size_t done = 0;
+	while (done < tableSize) {
+		const size_t n = std::min(sizeof(chunk), tableSize - done);
+		std::memcpy(chunk, table.get() + done, n);
+		if (!n64_raw_write(chunk, static_cast<uint32_t>(n)))
+			return std::unexpected("error al escribir en la memoria del cartucho");
+		done += n;
+	}
+	while (done < size) {
+		const size_t n = std::min(sizeof(chunk), size - done);
+		if (!handle.read(chunk, n))
+			return std::unexpected("handle.read failed");
+		if (!n64_raw_write(chunk, static_cast<uint32_t>(n)))
+			return std::unexpected("error al escribir en la memoria del cartucho");
+		done += n;
+	}
+	n64_raw_end();
+	return table;
+}
+#define DUNGEON_CEL_LOADER LoadDungeonCelsToCart
+#else
+#define DUNGEON_CEL_LOADER LoadFileInMemWithStatus
+#endif
+
 std::expected<void, std::string> LoadLvlGFX()
 {
 	assert(pDungeonCels == nullptr);
 	constexpr int SpecialCelWidth = 64;
 
 	const auto loadAll = [](const char *cel, const char *til, const char *special) -> std::expected<void, std::string> {
-		ASSIGN_OR_RETURN(pDungeonCels, LoadFileInMemWithStatus(cel));
+		ASSIGN_OR_RETURN(pDungeonCels, DUNGEON_CEL_LOADER(cel));
 		ASSIGN_OR_RETURN(pMegaTiles, LoadFileInMemWithStatus<MegaTile>(til));
 		ASSIGN_OR_RETURN(pSpecialCels, LoadCelWithStatus(special, SpecialCelWidth));
 		return {};
@@ -1378,7 +1429,7 @@ std::expected<void, std::string> LoadLvlGFX()
 		LogVerbose("LoadLvlGFX (town): cel {} | til {} | special {} | pal {}",
 		    active.dungeonCelPath, active.megaTilePath, active.specialCelsPath, active.palettePath);
 
-		ASSIGN_OR_RETURN(pDungeonCels, LoadTownAssetWithFallback(active.dungeonCelPath, tristram.dungeonCelPath.c_str(), TownAssets::RetailDungeonCel, [](const char *p) { return LoadFileInMemWithStatus(p); }));
+		ASSIGN_OR_RETURN(pDungeonCels, LoadTownAssetWithFallback(active.dungeonCelPath, tristram.dungeonCelPath.c_str(), TownAssets::RetailDungeonCel, [](const char *p) { return DUNGEON_CEL_LOADER(p); }));
 
 		ASSIGN_OR_RETURN(pMegaTiles, LoadTownAssetWithFallback(active.megaTilePath, tristram.megaTilePath.c_str(), TownAssets::RetailMegaTile, [](const char *p) { return LoadFileInMemWithStatus<MegaTile>(p); }));
 

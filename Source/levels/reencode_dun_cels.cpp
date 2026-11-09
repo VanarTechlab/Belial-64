@@ -240,6 +240,7 @@ size_t GetReencodedSize(const uint8_t *dungeonCels, std::span<std::pair<uint16_t
 } // namespace
 
 #ifdef __N64__
+extern "C" const uint8_t *n64_raw_frame(uint32_t offset, uint32_t size);
 extern "C" void n64_cels_begin(void);
 extern "C" void n64_cels_write(uint32_t offset, const void *data, uint32_t size);
 extern "C" void n64_cels_end(void);
@@ -283,7 +284,12 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 		lookup += 4;
 #endif
 		const uint32_t srcFrameBegin = Swap32LE(srcOffsets[frame]);
+#ifdef __N64__
+		// N64: el CEL original esta en la memoria del cartucho; en la RAM solo su tabla
+		const uint8_t *src = n64_raw_frame(srcFrameBegin, Swap32LE(srcOffsets[frame + 1]) - srcFrameBegin);
+#else
 		const uint8_t *src = &srcData[srcFrameBegin];
+#endif
 		switch (info.type) {
 		case TileType::TransparentSquare: {
 			if (info.isFloor()) {
