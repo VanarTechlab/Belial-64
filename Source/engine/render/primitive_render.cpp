@@ -74,7 +74,11 @@ void DrawHalfTransparentBlendedRectTo(const Surface &out, unsigned sx, unsigned 
 	DrawHalfTransparentAligned32BlendedRectTo(out, sx, sy, width, height);
 }
 #else
-#define DrawHalfTransparentBlendedRectTo DrawHalfTransparentUnalignedBlendedRectTo
+// N64 (y cualquier plataforma sin la tabla de 128 KiB): funcion en vez de #define, la firma no coincide
+void DrawHalfTransparentBlendedRectTo(const Surface &out, unsigned sx, unsigned sy, unsigned width, unsigned height)
+{
+	DrawHalfTransparentUnalignedBlendedRectTo(out, sx, sy, width, height, 0);
+}
 #endif
 
 } // namespace
