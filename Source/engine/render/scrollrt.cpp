@@ -1730,7 +1730,13 @@ void CalcViewportGeometry()
 	const int screenHeight = GetScreenHeight() / zoomFactor;
 	const int panelHeight = GetMainPanel().size.height / zoomFactor;
 	const int pixelsToPanel = screenHeight - panelHeight;
+#ifdef __N64__
+	// N64 (f2v28): el personaje en el centro de la pantalla (el panel va reducido encima)
+	(void)pixelsToPanel;
+	Point playerPosition { screenWidth / 2, screenHeight / 2 };
+#else
 	Point playerPosition { screenWidth / 2, pixelsToPanel / 2 };
+#endif
 
 	if (*GetOptions().Graphics.zoom)
 		playerPosition.y += TILE_HEIGHT / 4;

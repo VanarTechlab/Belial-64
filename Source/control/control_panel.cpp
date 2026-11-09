@@ -250,10 +250,10 @@ void CalculatePanelAreas()
 		MainPanelSize
 	};
 #ifdef __N64__
-	// N64 (f2v26): el panel se dibuja en una capa aparte (scrollrt.cpp, N64PanelOut) que el RDP
-	// pone reducida abajo; desde x=88 del panel (frasco de vida) hasta el final.
+	// N64 (f2v26/f2v28): el panel se dibuja entero en una capa aparte (scrollrt.cpp, N64PanelOut)
+	// que el RDP pone reducida abajo, tan ancha como quepa sin estirarla.
 	if (gnScreenWidth < MainPanelSize.width)
-		MainPanel.position.x = -88;
+		MainPanel.position.x = 0;
 #endif
 	LeftPanel = {
 		{ 0, 0 },
