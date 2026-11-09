@@ -2034,6 +2034,13 @@ void LogGamepadChange(GamepadLayout newGamepad)
 
 } // namespace
 
+#ifdef __N64__
+bool N64GameUIPanelActive()
+{
+	return GetLeftStickOrDPadGameUIHandler() != nullptr;
+}
+#endif
+
 void FocusOnVisualStore()
 {
 	InvalidateInventorySlot();        // Clear inventory focus

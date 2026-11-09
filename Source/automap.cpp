@@ -1567,7 +1567,7 @@ void InitAutomapOnce()
 	// Set minimap scale
 	const int height = 480;
 	const int scale = 25;
-	const int factor = gnScreenHeight / height;
+	const int factor = std::max(1, gnScreenHeight / height); // N64 (f2v31): a 300/270 de alto daba 0 y dividia por cero
 
 	if (factor >= 8) {
 		MinimapScale = scale * 8;

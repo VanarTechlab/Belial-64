@@ -2313,25 +2313,41 @@ void InitPadmapActions()
 	    "MoveUp",
 	    N_("Move up"),
 	    N_("Moves the player character up."),
+#ifdef __N64__ // N64: el personaje solo con la palanca
+	    ControllerButton_NONE,
+#else
 	    ControllerButton_BUTTON_DPAD_UP,
+#endif
 	    [] {});
 	options.Padmapper.AddAction(
 	    "MoveDown",
 	    N_("Move down"),
 	    N_("Moves the player character down."),
+#ifdef __N64__
+	    ControllerButton_NONE,
+#else
 	    ControllerButton_BUTTON_DPAD_DOWN,
+#endif
 	    [] {});
 	options.Padmapper.AddAction(
 	    "MoveLeft",
 	    N_("Move left"),
 	    N_("Moves the player character left."),
+#ifdef __N64__
+	    ControllerButton_NONE,
+#else
 	    ControllerButton_BUTTON_DPAD_LEFT,
+#endif
 	    [] {});
 	options.Padmapper.AddAction(
 	    "MoveRight",
 	    N_("Move right"),
 	    N_("Moves the player character right."),
+#ifdef __N64__
+	    ControllerButton_NONE,
+#else
 	    ControllerButton_BUTTON_DPAD_RIGHT,
+#endif
 	    [] {});
 	options.Padmapper.AddAction(
 	    "StandGround",
@@ -2367,22 +2383,40 @@ void InitPadmapActions()
 	    "Character",
 	    N_("Character"),
 	    N_("Open Character screen."),
+#ifdef __N64__ // N64 (f2v31): cruceta izquierda = personaje (si no hay un panel que use la cruceta)
+	    ControllerButton_BUTTON_DPAD_LEFT,
+	    [] {
+		    ProcessGameAction(GameAction { GameActionType_TOGGLE_CHARACTER_INFO });
+	    },
+	    nullptr,
+	    []() { return CanPlayerTakeAction() && !InGameMenu() && !N64GameUIPanelActive(); });
+#else
 	    ControllerButton_AXIS_TRIGGERLEFT,
 	    [] {
 		    ProcessGameAction(GameAction { GameActionType_TOGGLE_CHARACTER_INFO });
 	    },
 	    nullptr,
 	    []() { return CanPlayerTakeAction() && !InGameMenu(); });
+#endif
 	options.Padmapper.AddAction(
 	    "Inventory",
 	    N_("Inventory"),
 	    N_("Open Inventory screen."),
+#ifdef __N64__ // N64: cruceta derecha = inventario
+	    ControllerButton_BUTTON_DPAD_RIGHT,
+	    [] {
+		    ProcessGameAction(GameAction { GameActionType_TOGGLE_INVENTORY });
+	    },
+	    nullptr,
+	    []() { return CanPlayerTakeAction() && !InGameMenu() && !N64GameUIPanelActive(); });
+#else
 	    ControllerButton_AXIS_TRIGGERRIGHT,
 	    [] {
 		    ProcessGameAction(GameAction { GameActionType_TOGGLE_INVENTORY });
 	    },
 	    nullptr,
 	    []() { return CanPlayerTakeAction() && !InGameMenu(); });
+#endif
 	options.Padmapper.AddAction(
 	    "QuestLog",
 	    N_("Quest log"),
@@ -2397,12 +2431,21 @@ void InitPadmapActions()
 	    "SpellBook",
 	    N_("Spellbook"),
 	    N_("Open Spellbook."),
+#ifdef __N64__ // N64: cruceta abajo = libro de hechizos
+	    ControllerButton_BUTTON_DPAD_DOWN,
+	    [] {
+		    ProcessGameAction(GameAction { GameActionType_TOGGLE_SPELL_BOOK });
+	    },
+	    nullptr,
+	    []() { return CanPlayerTakeAction() && !InGameMenu() && !N64GameUIPanelActive(); });
+#else
 	    { ControllerButton_BUTTON_BACK, ControllerButton_AXIS_TRIGGERRIGHT },
 	    [] {
 		    ProcessGameAction(GameAction { GameActionType_TOGGLE_SPELL_BOOK });
 	    },
 	    nullptr,
 	    []() { return CanPlayerTakeAction() && !InGameMenu(); });
+#endif
 	options.Padmapper.AddAction(
 	    "DisplaySpells",
 	    N_("Speedbook"),
@@ -2417,8 +2460,15 @@ void InitPadmapActions()
 	    "ToggleAutomap",
 	    N_("Toggle automap"),
 	    N_("Toggles if automap is displayed."),
+#ifdef __N64__ // N64: cruceta arriba = mapa
+	    ControllerButton_BUTTON_DPAD_UP,
+	    DoAutoMap,
+	    nullptr,
+	    []() { return !InGameMenu() && !N64GameUIPanelActive(); });
+#else
 	    ControllerButton_BUTTON_LEFTSTICK,
 	    DoAutoMap);
+#endif
 	options.Padmapper.AddAction(
 	    "AutomapMoveUp",
 	    N_("Automap Move Up"),

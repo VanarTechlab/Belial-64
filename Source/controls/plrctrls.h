@@ -23,6 +23,10 @@ enum class BeltItemType : uint8_t {
 
 extern GameActionType ControllerActionHeld;
 extern bool StandToggle;
+#ifdef __N64__
+// N64 (f2v31): hay un panel abierto que usa la cruceta (inventario, tienda...)
+bool N64GameUIPanelActive();
+#endif
 
 // Runs every frame.
 // Handles menu movement.

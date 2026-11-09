@@ -1395,7 +1395,12 @@ std::string_view PadmapperOptions::Action::GetName() const
 void PadmapperOptions::Action::LoadFromIni(std::string_view category)
 {
 	const std::span<const Ini::Value> iniValues = ini->get(category, key);
+#ifdef __N64__
+	// N64 (f2v31): los botones del mando son siempre los de fabrica (diablo.ini puede tener otros)
+	if (true) {
+#else
 	if (iniValues.empty()) {
+#endif
 		SetValue(defaultInput);
 		return; // Use the default button combo if no mapping has been set.
 	}

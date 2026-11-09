@@ -91,6 +91,8 @@
 namespace devilution {
 
 #ifdef __N64__
+extern "C" unsigned n64_us(void);
+extern "C" void n64_prof_add(int which, unsigned us);
 extern "C" void n64_panel_attach(uint8_t *pixels, int pitch, int rows, int panelRow);
 extern "C" void n64_panel_frame(void);
 extern "C" unsigned n64_panel_serial(void);
@@ -1318,8 +1320,17 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 	    out.at(0, 0), out.pitch(), LightTables, FullyLitLightTable, FullyDarkLightTable,
 	    dLight, MicroTileLen);
 
+#ifdef __N64__
+	const unsigned n64F0 = n64_us();
+	DrawFloor(out, lightmap, position, Point {} + offset, rows, columns);
+	const unsigned n64F1 = n64_us();
+	n64_prof_add(3, n64F1 - n64F0);
+	DrawTileContent(out, lightmap, position, Point {} + offset, rows, columns);
+	n64_prof_add(4, n64_us() - n64F1);
+#else
 	DrawFloor(out, lightmap, position, Point {} + offset, rows, columns);
 	DrawTileContent(out, lightmap, position, Point {} + offset, rows, columns);
+#endif
 	DrawOOB(out, lightmap, position, Point {} + offset, rows, columns);
 
 	if (*GetOptions().Graphics.zoom) {
