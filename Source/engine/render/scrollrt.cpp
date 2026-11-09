@@ -125,6 +125,15 @@ Surface N64PanelOut(const Surface &out)
 	return Surface(n64PanelSurface, MakeSdlRect(rx, ry, 640 - rx, pos.y + GetMainPanel().size.height));
 }
 } // namespace
+// N64 (f2v39): se suelta la capa del panel al cargar un nivel (se vuelve a crear al dibujar)
+void N64FreePanelLayer()
+{
+	if (n64PanelSurface != nullptr) {
+		n64_panel_attach(nullptr, 0, 0, 0);
+		SDL_FreeSurface(n64PanelSurface);
+		n64PanelSurface = nullptr;
+	}
+}
 #endif
 
 enum OutlineColors : uint8_t {

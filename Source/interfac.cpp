@@ -652,12 +652,14 @@ void CompleteProgress()
 #ifdef __N64__
 extern "C" void n64_cel_cache_release(void);
 void CalcViewportGeometry();
+void N64FreePanelLayer();
 #endif
 void ShowProgress(interface_mode uMsg)
 {
 #ifdef __N64__
 	// N64 (f2v38): antes de cargar se suelta la cache de CEL del nivel anterior (si no, no cabia la
 	// imagen de la pantalla de carga al bajar a la catedral) y la pantalla de carga va a 640x480
+	N64FreePanelLayer();
 	n64_cel_cache_release();
 	N64UseLoadingResolution(true);
 #endif
