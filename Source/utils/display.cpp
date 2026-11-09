@@ -870,8 +870,10 @@ void SetFullscreenMode()
 }
 
 #ifdef __N64__
+bool N64InGame = false;
 void N64UseGameResolution(bool inGame)
 {
+	N64InGame = inGame;
 	forceResolution = inGame ? Size { 0, 0 } : Size { 640, 480 };
 	ResizeWindow();
 }

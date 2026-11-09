@@ -41,6 +41,7 @@ void music_stop()
 	n64_music_stop();
 	sgnMusicTrack = NUM_MUSIC;
 }
+extern bool N64InGame;
 void music_start(_music_id nTrack)
 {
 	if (nTrack >= NUM_MUSIC)
@@ -48,6 +49,11 @@ void music_start(_music_id nTrack)
 	sgnMusicTrack = nTrack;
 	if (n64MusicDisabled)
 		return;
+	// N64 (f2v36): sin musica en los menus (copiarla al cartucho tardaba 6-11 s cada vez)
+	if (!N64InGame) {
+		n64_music_stop();
+		return;
+	}
 	n64_music_volume(n64MusicVolume, n64MusicMuted ? 1 : 0);
 	n64_music_start(N64MusicTracks[nTrack]);
 }
