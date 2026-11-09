@@ -154,10 +154,24 @@ DVL_ALWAYS_INLINE const uint8_t *GetDunFrameFoliage(const std::byte *dungeonCelD
  * @param maskType The mask to use,
  * @param tbl LightTable or TRN for a tile.
  */
+#ifdef __N64__
+// N64 (f2v29): rectangulo de la pantalla tapado del todo por el panel reducido (scrollrt.cpp)
+extern int N64OccX0, N64OccY0, N64OccX1, N64OccY1;
+extern const uint8_t *N64OccPixels;
+DVL_ALWAYS_INLINE bool N64Occluded(const Surface &out, const Point &position, int height)
+{
+	return out.begin() == N64OccPixels && position.x >= N64OccX0 && position.x + 32 <= N64OccX1
+	    && position.y - height + 1 >= N64OccY0 && position.y < N64OccY1;
+}
+#endif
 DVL_ALWAYS_INLINE void RenderTile(const Surface &out, const Lightmap &lightmap, const Point &position,
     const std::byte *dungeonCelData, LevelCelBlock levelCelBlock, MaskType maskType, const uint8_t *tbl)
 {
 	const TileType tileType = levelCelBlock.type();
+#ifdef __N64__
+	if (N64Occluded(out, position, 32))
+		return;
+#endif
 	RenderTileFrame(out, lightmap, position, tileType,
 	    GetDunFrame(dungeonCelData, levelCelBlock.frame()),
 	    (tileType == TileType::LeftTriangle || tileType == TileType::RightTriangle)
@@ -172,6 +186,10 @@ DVL_ALWAYS_INLINE void RenderTile(const Surface &out, const Lightmap &lightmap, 
 DVL_ALWAYS_INLINE void RenderTileFoliage(const Surface &out, const Lightmap &lightmap, const Point &position,
     const std::byte *dungeonCelData, LevelCelBlock levelCelBlock, const uint8_t *tbl)
 {
+#ifdef __N64__
+	if (N64Occluded(out, Point { position.x, position.y - 16 }, 16))
+		return;
+#endif
 	RenderTileFrame(out, lightmap, Point { position.x, position.y - 16 }, TileType::TransparentSquare,
 	    GetDunFrameFoliage(dungeonCelData, levelCelBlock.frame()), /*height=*/16, MaskType::Solid, tbl);
 }

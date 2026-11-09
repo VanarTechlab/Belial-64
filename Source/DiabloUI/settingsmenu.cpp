@@ -87,6 +87,10 @@ std::string padEntryTimerText;
 
 bool IsValidEntry(OptionEntryBase *pOptionEntry)
 {
+#ifdef __N64__
+	// N64 (f2v29): de momento solo la resolucion
+	return pOptionEntry == &GetOptions().Graphics.resolution;
+#endif
 	auto flags = pOptionEntry->GetFlags();
 	if (HasAnyOf(flags, OptionEntryFlags::NeedDiabloMpq) && !HaveIntro())
 		return false;

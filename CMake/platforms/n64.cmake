@@ -24,6 +24,7 @@ set(DEVILUTIONX_PLATFORM_FILE_UTIL_LINK_LIBRARIES "")
 
 # --- Fase 1: arranque real en la N64 ---
 add_compile_definitions(__N64__)
+add_compile_definitions(NOEXIT) # sin "Exit Diablo": la N64 no puede salir a ningun sitio
 set(SDL1_VIDEO_MODE_BPP 8)
 set(SDL1_VIDEO_MODE_FLAGS SDL_HWSURFACE|SDL_FULLSCREEN)
 set(PREFILL_PLAYER_NAME ON)

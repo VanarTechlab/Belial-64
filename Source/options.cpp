@@ -552,10 +552,10 @@ OptionEntryResolution::OptionEntryResolution()
 void OptionEntryResolution::LoadFromIni(std::string_view category)
 {
 #ifdef __N64__
-	// N64 (f2v27): otra vez fija a 400x300 (a 640x480 se veia peor, iba a 5 fps y faltaba memoria);
-	// el panel va reducido en su propia capa (f2v26). Se ignora lo guardado en diablo.ini.
-	(void)category;
-	size_ = { DEFAULT_WIDTH, DEFAULT_HEIGHT };
+	// N64 (f2v29): 400x300 o panoramica 480x270 (para teles 16:9). Los menus van siempre a 640x480.
+	size_ = { ini->getInt(category, "Width", DEFAULT_WIDTH), ini->getInt(category, "Height", DEFAULT_HEIGHT) };
+	if (!((size_.width == 400 && size_.height == 300) || (size_.width == 480 && size_.height == 270)))
+		size_ = { DEFAULT_WIDTH, DEFAULT_HEIGHT };
 #else
 	size_ = { ini->getInt(category, "Width", DEFAULT_WIDTH), ini->getInt(category, "Height", DEFAULT_HEIGHT) };
 #endif

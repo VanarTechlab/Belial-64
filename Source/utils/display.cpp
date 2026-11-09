@@ -68,7 +68,13 @@ namespace devilution {
 extern SDLSurfaceUniquePtr RendererTextureSurface; /** defined in dx.cpp */
 SDL_Window *ghMainWnd;
 
+#ifdef __N64__
+// N64 (f2v29): los menus van a 640x480 (el RDP los reduce a la pantalla); la partida usa la
+// resolucion de Ajustes (400x300 o 480x270). Ver N64UseGameResolution.
+Size forceResolution { 640, 480 };
+#else
 Size forceResolution;
+#endif
 
 uint16_t gnScreenWidth;
 uint16_t gnScreenHeight;
@@ -862,6 +868,14 @@ void SetFullscreenMode()
 #endif
 	RedrawEverything();
 }
+
+#ifdef __N64__
+void N64UseGameResolution(bool inGame)
+{
+	forceResolution = inGame ? Size { 0, 0 } : Size { 640, 480 };
+	ResizeWindow();
+}
+#endif
 
 void ResizeWindow()
 {

@@ -94,7 +94,10 @@ namespace devilution {
 extern "C" void n64_panel_attach(uint8_t *pixels, int pitch, int rows, int panelRow);
 extern "C" void n64_panel_frame(void);
 extern "C" unsigned n64_panel_serial(void);
+extern "C" int n64_panel_occluder(int *x0, int *y0, int *x1, int *y1);
 void CalculatePanelAreas();
+int N64OccX0, N64OccY0, N64OccX1, N64OccY1;
+const uint8_t *N64OccPixels;
 namespace {
 // Capa del panel (f2v26): 640x160, el panel ocupa las filas 32..159 y encima queda sitio
 // para la parte de arriba de los frascos. Las coordenadas son las de la pantalla (las del
@@ -1959,6 +1962,10 @@ void DrawAndBlit()
 	}
 	const Surface panelOut = N64PanelOut(out);
 	n64_panel_frame();
+	if (panelOut.surface != out.surface && n64_panel_occluder(&N64OccX0, &N64OccY0, &N64OccX1, &N64OccY1))
+		N64OccPixels = out.begin();
+	else
+		N64OccPixels = nullptr;
 #else
 	const Surface &panelOut = out;
 #endif

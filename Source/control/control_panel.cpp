@@ -238,9 +238,6 @@ bool IsLevelUpButtonVisible()
 
 } // namespace
 
-#ifdef __N64__
-extern "C" int n64_panel_game_rows(int screenHeight);
-#endif
 void CalculatePanelAreas()
 {
 	constexpr Size MainPanelSize { 640, 128 };
@@ -282,10 +279,8 @@ void CalculatePanelAreas()
 
 	gnViewportHeight = gnScreenHeight;
 #ifdef __N64__
-	// N64: el mundo llega hasta donde empieza el panel reducido (el resto no se dibuja: mas rapido)
-	if (gnScreenWidth < MainPanel.size.width) {
-		gnViewportHeight -= n64_panel_game_rows(gnScreenHeight);
-	}
+	// N64 (f2v29): el mundo ocupa toda la pantalla; lo que tapa del todo el panel reducido no se
+	// dibuja (dun_render.hpp, N64Occluded)
 	if (false) {
 #else
 	if (gnScreenWidth <= MainPanel.size.width) {

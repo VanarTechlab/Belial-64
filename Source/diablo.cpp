@@ -2741,6 +2741,9 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 		// Save 2.8 MiB of RAM by freeing all main menu resources
 		// before starting the game.
 		UiDestroy();
+#ifdef __N64__
+		N64UseGameResolution(true);
+#endif
 
 		gbSelectProvider = false;
 
@@ -2759,6 +2762,9 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 		RunGameLoop(uMsg);
 		NetClose();
 		UnloadFonts();
+#ifdef __N64__
+		N64UseGameResolution(false);
+#endif
 
 		// If the player left the game into the main menu,
 		// initialize main menu resources.

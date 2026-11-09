@@ -35,6 +35,9 @@ extern SDLTextureUniquePtr texture;
 extern SDLPaletteUniquePtr Palette;
 extern SDL_Surface *PalSurface;
 extern DVL_API_FOR_TEST Size forceResolution;
+#ifdef __N64__
+void N64UseGameResolution(bool inGame);
+#endif
 
 #ifdef USE_SDL1
 void SetVideoMode(int width, int height, int bpp, uint32_t flags);
