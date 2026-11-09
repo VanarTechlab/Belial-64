@@ -241,6 +241,7 @@ size_t GetReencodedSize(const uint8_t *dungeonCels, std::span<std::pair<uint16_t
 
 #ifdef __N64__
 extern "C" const uint8_t *n64_raw_frame(uint32_t offset, uint32_t size);
+extern "C" void n64_raw_close(void);
 extern "C" void n64_cels_begin(void);
 extern "C" void n64_cels_write(uint32_t offset, const void *data, uint32_t size);
 extern "C" void n64_cels_end(void);
@@ -331,6 +332,7 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 	}
 #ifdef __N64__
 	n64_cels_end();
+	n64_raw_close();
 	const uint32_t outSize = written;
 #endif
 	WriteLE32(lookup, static_cast<uint32_t>(outSize));

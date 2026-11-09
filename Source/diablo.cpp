@@ -37,6 +37,7 @@
 #include "controls/plrctrls.h"
 #include "controls/remap_keyboard.h"
 #include "utils/endian_swap.hpp"
+#include "utils/endian_write.hpp"
 #include "diablo.h"
 #include "diablo_msg.hpp"
 #include "discord/discord.h"
@@ -1361,50 +1362,68 @@ void DiabloDeinit()
 }
 
 #ifdef __N64__
-extern "C" void n64_raw_begin(void);
-extern "C" bool n64_raw_write(const void *data, uint32_t size);
-extern "C" void n64_raw_end(void);
-extern "C" void n64_raw_verify(const void *ref, uint32_t size);
-// N64: el CEL original (2 MB en el pueblo) no cabe entero en la RAM. Se copia a la memoria
-// del cartucho a trozos y en la RAM solo queda su tabla de posiciones; ReencodeDungeonCels
-// lee cada trozo del cartucho (ver reencode_dun_cels.cpp y sdl_n64.c).
+// N64: el CEL original (2 MB en el pueblo) no cabe en la RAM y la memoria del cartucho
+// solo es fiable en una zona (ver sdl_n64.c). Asi que el archivo se deja abierto en la SD y
+// ReencodeDungeonCels lo lee hacia delante, trozo a trozo, con n64_raw_frame(): los trozos
+// se piden en orden creciente, asi que basta con una ventana pequena.
+namespace {
+std::optional<AssetHandle> N64CelHandle;
+size_t N64CelSize;
+alignas(16) uint8_t N64CelWindow[32768];
+uint32_t N64CelWinStart;
+uint32_t N64CelWinLen;
+} // namespace
+
+extern "C" const uint8_t *n64_raw_frame(uint32_t offset, uint32_t size)
+{
+	if (!N64CelHandle || size > sizeof(N64CelWindow))
+		return N64CelWindow;
+	if (offset < N64CelWinStart || offset + size > N64CelWinStart + N64CelWinLen) {
+		// mover la ventana: conservar lo que ya este leido a partir de offset
+		const uint32_t winEnd = N64CelWinStart + N64CelWinLen;
+		uint32_t keep = 0;
+		if (offset >= N64CelWinStart && offset < winEnd) {
+			keep = winEnd - offset;
+			std::memmove(N64CelWindow, N64CelWindow + (offset - N64CelWinStart), keep);
+		} else {
+			N64CelHandle->seek(static_cast<long>(offset));
+		}
+		N64CelWinStart = offset;
+		size_t want = std::min(sizeof(N64CelWindow) - keep, N64CelSize - (offset + keep));
+		if (!N64CelHandle->read(N64CelWindow + keep, want))
+			LogError("n64: fallo al leer el CEL en {}", offset + keep);
+		N64CelWinLen = keep + static_cast<uint32_t>(want);
+	}
+	return N64CelWindow + (offset - N64CelWinStart);
+}
+
+extern "C" void n64_raw_close(void)
+{
+	N64CelHandle = std::nullopt;
+}
+
 std::expected<std::unique_ptr<std::byte[]>, std::string> LoadDungeonCelsToCart(const char *path)
 {
 	size_t size;
 	AssetHandle handle = OpenAsset(path, size);
 	if (!handle.ok())
 		return std::unexpected(FailedToOpenFileErrorMessage(path, handle.error()));
-	alignas(16) static std::byte chunk[16384];
-	if (size < 8 || !handle.read(chunk, 4))
+	uint32_t count;
+	if (size < 8 || !handle.read(&count, 4))
 		return std::unexpected(StrCat("CEL demasiado corto: ", path));
-	const uint32_t count = Swap32LE(*reinterpret_cast<const uint32_t *>(chunk));
+	count = Swap32LE(count);
 	const size_t tableSize = (static_cast<size_t>(count) + 2) * 4;
 	if (tableSize > size)
 		return std::unexpected(StrCat("CEL con tabla invalida: ", path));
 	std::unique_ptr<std::byte[]> table { new std::byte[tableSize] };
-	std::memcpy(table.get(), chunk, 4);
+	WriteLE32(table.get(), count);
 	if (!handle.read(table.get() + 4, tableSize - 4))
 		return std::unexpected("handle.read failed");
-	n64_raw_begin();
-	// la tabla tambien va al cartucho, para que las posiciones coincidan con el archivo
-	size_t done = 0;
-	while (done < tableSize) {
-		const size_t n = std::min(sizeof(chunk), tableSize - done);
-		std::memcpy(chunk, table.get() + done, n);
-		if (!n64_raw_write(chunk, static_cast<uint32_t>(n)))
-			return std::unexpected("error al escribir en la memoria del cartucho");
-		done += n;
-	}
-	while (done < size) {
-		const size_t n = std::min(sizeof(chunk), size - done);
-		if (!handle.read(chunk, n))
-			return std::unexpected("handle.read failed");
-		if (!n64_raw_write(chunk, static_cast<uint32_t>(n)))
-			return std::unexpected("error al escribir en la memoria del cartucho");
-		done += n;
-	}
-	n64_raw_end();
-	n64_raw_verify(table.get(), static_cast<uint32_t>(tableSize));
+	N64CelSize = size;
+	N64CelWinStart = static_cast<uint32_t>(tableSize);
+	N64CelWinLen = 0;
+	N64CelHandle.emplace(std::move(handle));
+	LogVerbose("n64: CEL {} abierto para leer por partes ({} bytes, tabla {} bytes)", path, size, tableSize);
 	return table;
 }
 #define DUNGEON_CEL_LOADER LoadDungeonCelsToCart
