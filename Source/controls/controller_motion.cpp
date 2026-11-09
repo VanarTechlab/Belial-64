@@ -1,5 +1,6 @@
 #include "controls/controller_motion.h"
 
+#include <algorithm>
 #include <cmath>
 
 #ifdef USE_SDL3
@@ -241,8 +242,27 @@ AxisDirection GetAnalogStickDirection(float stickX, float stickY)
 	return result;
 }
 
+#ifdef __N64__
+extern "C" void n64_stick(int *x, int *y);
+#endif
 AxisDirection GetLeftStickOrDpadDirection(bool usePadmapper)
 {
+#ifdef __N64__
+	{
+		// N64 (f2v30): la palanca analogica es el stick izquierdo de verdad (antes eran flechas)
+		int sx, sy;
+		n64_stick(&sx, &sy);
+		float fx = std::clamp(sx / 70.F, -1.F, 1.F);
+		float fy = std::clamp(sy / 70.F, -1.F, 1.F);
+		if ((fx * fx) + (fy * fy) < 0.2F * 0.2F)
+			fx = fy = 0;
+		leftStickX = fx;
+		leftStickY = fy;
+		// el personaje solo se mueve con la palanca: la cruceta queda para menus e inventario
+		if (usePadmapper)
+			return GetAnalogStickDirection(leftStickX, leftStickY);
+	}
+#endif
 	AxisDirection result = GetAnalogStickDirection(leftStickX, leftStickY);
 
 	bool isUpPressed = false;

@@ -57,8 +57,18 @@ constexpr int SliderMarkerWidth = 27;
 constexpr int SliderFillMin = SliderMarkerWidth / 2;
 constexpr int SliderFillMax = SliderValueWidth - (SliderMarkerWidth / 2) - 1;
 
+#ifdef __N64__
+// N64 (f2v30): menu de la partida con letra de 30 (a 400x300 la de 46 no cabia)
+constexpr int GMenuTop = 117;
+constexpr int GMenuItemHeight = 34;
+#define N64_GMENU_FONT GameFont30
+#define N64_GMENU_FLAG UiFlags::FontSize30
+#else
 constexpr int GMenuTop = 117;
 constexpr int GMenuItemHeight = 45;
+#define N64_GMENU_FONT GameFont46
+#define N64_GMENU_FLAG UiFlags::FontSize46
+#endif
 
 OptionalOwnedClxSpriteList optbar_cel;
 OptionalOwnedClxSpriteList PentSpin_cel;
@@ -123,7 +133,7 @@ int GmenuGetLineWidth(TMenuItem *pItem)
 	if (pItem->isSlider())
 		return SliderItemWidth;
 
-	return GetLineWidth(_(pItem->pszStr), GameFont46, 2);
+	return GetLineWidth(_(pItem->pszStr), N64_GMENU_FONT, 2);
 }
 
 void GmenuDrawMenuItem(const Surface &out, TMenuItem *pItem, int y)
@@ -143,11 +153,16 @@ void GmenuDrawMenuItem(const Surface &out, TMenuItem *pItem, int y)
 	const int x = (gnScreenWidth - w) / 2;
 	const UiFlags style = pItem->enabled() ? UiFlags::ColorGold : UiFlags::ColorBlack;
 	DrawString(out, _(pItem->pszStr), Point { x, y },
-	    { .flags = style | UiFlags::FontSize46, .spacing = 2 });
+	    { .flags = style | N64_GMENU_FLAG, .spacing = 2 });
 	if (pItem == sgpCurrItem) {
 		const ClxSprite sprite = (*PentSpin_cel)[PentSpn2Spin()];
+#ifdef __N64__
+		ClxDraw(out, { x - 52, y + 42 }, sprite);
+		ClxDraw(out, { x + 4 + w, y + 42 }, sprite);
+#else
 		ClxDraw(out, { x - 54, y + 51 }, sprite);
 		ClxDraw(out, { x + 4 + w, y + 51 }, sprite);
+#endif
 	}
 }
 
