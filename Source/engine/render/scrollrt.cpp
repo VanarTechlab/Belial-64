@@ -412,6 +412,9 @@ void DrawPlayerIconHelper(const Surface &out, MissileGraphicID missileGraphicId,
 		position += GetOffsetForWalking(player.AnimInfo, player._pdir);
 
 	position.x -= GetMissileSpriteData(missileGraphicId).animWidth2;
+#ifdef __N64__
+	(void)GetMissileSpriteData(missileGraphicId).LoadGFX(); // carga bajo demanda
+#endif
 
 	const ClxSprite sprite = (*GetMissileSpriteData(missileGraphicId).sprites).list()[0];
 

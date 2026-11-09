@@ -2173,6 +2173,12 @@ void InitPlayerGFX(Player &player)
 		auto graphic = static_cast<player_graphic>(i);
 		if (graphic == player_graphic::Death)
 			continue;
+#ifdef __N64__
+		// N64: solo quieto y andando al entrar; atacar, hechizos, golpe y bloqueo se cargan
+		// la primera vez que se usan (NewPlrAnim llama a LoadPlrGFX). Ahorra ~1,5 MB.
+		if (graphic != player_graphic::Stand && graphic != player_graphic::Walk)
+			continue;
+#endif
 		LoadPlrGFX(player, graphic);
 	}
 }

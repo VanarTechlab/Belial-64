@@ -454,6 +454,11 @@ std::expected<void, std::string> InitMissileGFX()
 {
 	if (HeadlessMode)
 		return {};
+#ifdef __N64__
+	// N64: no hay memoria para tener todos los graficos de misiles (~1 MB); cada uno se
+	// carga la primera vez que se usa (ver SetMissAnim y SetUpMissileAnimationData).
+	return {};
+#endif
 
 	for (MissileFileData &missileSprite : MissileSpriteData) {
 		if (missileSprite.flags == MissileGraphicsFlags::MonsterOwned)

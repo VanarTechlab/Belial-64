@@ -90,6 +90,10 @@ void Missile::setAnimation(MissileGraphicID animtype)
 		return;
 	}
 
+#ifdef __N64__
+	if (!HeadlessMode)
+		(void)GetMissileSpriteData(animtype).LoadGFX(); // carga bajo demanda (ver InitMissileGFX)
+#endif
 	const MissileFileData &missileData = GetMissileSpriteData(animtype);
 
 	_miAnimType = animtype;
@@ -4250,6 +4254,9 @@ void SetUpMissileAnimationData()
 			continue;
 
 		if (missile._mitype != MissileID::Rhino) {
+#ifdef __N64__
+			(void)GetMissileSpriteData(missile._miAnimType).LoadGFX();
+#endif
 			missile._miAnimData = GetMissileSpriteData(missile._miAnimType).spritesForDirection(missile.getDirection16());
 			continue;
 		}
