@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <list>
 
 #ifdef USE_SDL3
@@ -301,6 +302,94 @@ void FindRangedTarget()
 	}
 }
 
+#ifdef __N64__
+// f2v43 MEDIDO: esta busqueda (anchura hasta 25 pasos alrededor del jugador, para elegir a quien
+// atacar con el mando) tardaba hasta 18 ms por tic en la mazmorra: cada casilla era un nodo de
+// std::list (malloc/free) y se borraba una tabla de 12 KiB cada vez. Aqui es la misma busqueda, en el
+// mismo orden (mismo resultado), con una cola fija y casillas marcadas con un numero de vuelta.
+void FindMeleeTarget()
+{
+	static uint8_t visitedStamp[MAXDUNX][MAXDUNY];
+	static uint8_t stamp = 0;
+	constexpr size_t QueueSize = 4096;
+	static uint8_t qx[QueueSize], qy[QueueSize], qs[QueueSize];
+	if (++stamp == 0) {
+		memset(visitedStamp, 0, sizeof(visitedStamp));
+		stamp = 1;
+	}
+	int maxSteps = 25; // Max steps for FindPath is 25
+	int rotations = 4;
+	bool canTalk = false;
+	size_t head = 0;
+	size_t tail = 0;
+
+	const Player &myPlayer = *MyPlayer;
+
+	{
+		const int startX = myPlayer.position.future.x;
+		const int startY = myPlayer.position.future.y;
+		visitedStamp[startX][startY] = stamp;
+		qx[tail] = static_cast<uint8_t>(startX);
+		qy[tail] = static_cast<uint8_t>(startY);
+		qs[tail] = 0;
+		tail++;
+	}
+
+	while (head != tail) {
+		const int nx = qx[head];
+		const int ny = qy[head];
+		const int nsteps = qs[head];
+		head++;
+
+		for (auto pathDir : PathDirs) {
+			const int dx = nx + pathDir.deltaX;
+			const int dy = ny + pathDir.deltaY;
+
+			if (visitedStamp[dx][dy] == stamp)
+				continue; // already visisted
+
+			if (nsteps > maxSteps) {
+				visitedStamp[dx][dy] = stamp;
+				continue;
+			}
+
+			if (!PosOkPlayer(myPlayer, { dx, dy })) {
+				visitedStamp[dx][dy] = stamp;
+
+				if (dMonster[dx][dy] != 0) {
+					const int mi = std::abs(dMonster[dx][dy]) - 1;
+					const Monster &monster = Monsters[mi];
+					if (CanTargetMonster(monster)) {
+						const bool newCanTalk = CanTalkToMonst(monster);
+						if (pcursmonst != -1 && !canTalk && newCanTalk)
+							continue;
+						const int newRotations = GetRotaryDistance({ dx, dy });
+						if (pcursmonst != -1 && canTalk == newCanTalk && rotations < newRotations)
+							continue;
+						rotations = newRotations;
+						canTalk = newCanTalk;
+						pcursmonst = mi;
+						if (!canTalk)
+							maxSteps = nsteps; // Monsters found, cap search to current steps
+					}
+				}
+
+				continue;
+			}
+
+			if (CanStep({ nx, ny }, { dx, dy })) {
+				if (tail < QueueSize) {
+					qx[tail] = static_cast<uint8_t>(dx);
+					qy[tail] = static_cast<uint8_t>(dy);
+					qs[tail] = static_cast<uint8_t>(nsteps + 1);
+					tail++;
+				}
+				visitedStamp[dx][dy] = stamp;
+			}
+		}
+	}
+}
+#else
 void FindMeleeTarget()
 {
 	bool visited[MAXDUNX][MAXDUNY] = { {} };
@@ -370,6 +459,8 @@ void FindMeleeTarget()
 		}
 	}
 }
+
+#endif
 
 void CheckMonstersNearby()
 {
