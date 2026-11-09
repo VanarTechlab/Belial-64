@@ -239,6 +239,12 @@ size_t GetReencodedSize(const uint8_t *dungeonCels, std::span<std::pair<uint16_t
 
 } // namespace
 
+#ifdef __N64__
+extern "C" void n64_cels_begin(void);
+extern "C" void n64_cels_write(uint32_t offset, const void *data, uint32_t size);
+extern "C" void n64_cels_end(void);
+#endif
+
 void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<std::pair<uint16_t, DunFrameInfo>> frames)
 {
 	const auto *srcData = reinterpret_cast<const uint8_t *>(dungeonCels.get());
@@ -249,6 +255,23 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 	    FormatInteger(Swap32LE(srcOffsets[0])),
 	    FormatInteger(Swap32LE(srcOffsets[Swap32LE(srcOffsets[0]) + 1])));
 
+#ifdef __N64__
+	// N64: en la RAM solo la tabla; cada trozo se escribe en la memoria del cartucho
+	// (alineado a 8 bytes) y despues se lee con una cache pequena (ver sdl_n64.c).
+	const size_t headerSize = (2 + frames.size()) * 4;
+	std::unique_ptr<std::byte[]> result { new std::byte[headerSize] };
+	auto *const resultPtr = reinterpret_cast<uint8_t *>(result.get());
+	WriteLE32(resultPtr, static_cast<uint32_t>(frames.size()));
+	uint8_t *lookup = resultPtr + 4;
+	alignas(16) uint8_t frameBuf[2048];
+	uint8_t *out = frameBuf;
+	uint32_t written = static_cast<uint32_t>((headerSize + 7) & ~size_t { 7 });
+	n64_cels_begin();
+	for (const auto &[frame, info] : frames) {
+		WriteLE32(lookup, written);
+		lookup += 4;
+		out = frameBuf;
+#else
 	const size_t outSize = GetReencodedSize(srcData, frames);
 	std::unique_ptr<std::byte[]> result { new std::byte[outSize] };
 	auto *const resultPtr = reinterpret_cast<uint8_t *>(result.get());
@@ -258,6 +281,7 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 	for (const auto &[frame, info] : frames) {
 		WriteLE32(lookup, static_cast<uint32_t>(out - resultPtr));
 		lookup += 4;
+#endif
 		const uint32_t srcFrameBegin = Swap32LE(srcOffsets[frame]);
 		const uint8_t *src = &srcData[srcFrameBegin];
 		switch (info.type) {
@@ -290,7 +314,19 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 			ReencodeDungeonCelsRightTrapezoid(out, src);
 			break;
 		}
+#ifdef __N64__
+		const uint32_t frameSize = static_cast<uint32_t>(out - frameBuf);
+		const uint32_t padded = (frameSize + 7) & ~7u;
+		while (out < frameBuf + padded)
+			*out++ = 0;
+		n64_cels_write(written, frameBuf, padded);
+		written += padded;
+#endif
 	}
+#ifdef __N64__
+	n64_cels_end();
+	const uint32_t outSize = written;
+#endif
 	WriteLE32(lookup, static_cast<uint32_t>(outSize));
 
 	const auto *dstOffsets = reinterpret_cast<const uint32_t *>(resultPtr);

@@ -120,10 +120,20 @@ void RenderTileFrame(const Surface &out, const Lightmap &lightmap, const Point &
 /**
  * @brief Returns the raw data for the given dungeon frame.
  */
+#ifdef __N64__
+// N64: los CEL del nivel viven en la memoria del cartucho; en la RAM solo esta la tabla
+// de posiciones y una cache pequena con los trozos que se estan dibujando.
+extern "C" const uint8_t *n64_cel_frame(uint32_t offset, uint32_t size);
+#endif
 DVL_ALWAYS_INLINE const uint8_t *GetDunFrame(const std::byte *dungeonCelData, uint32_t frame)
 {
 	const auto *frameTable = reinterpret_cast<const uint32_t *>(dungeonCelData);
+#ifdef __N64__
+	const uint32_t begin = Swap32LE(frameTable[frame]);
+	return n64_cel_frame(begin, Swap32LE(frameTable[frame + 1]) - begin);
+#else
 	return reinterpret_cast<const uint8_t *>(&dungeonCelData[Swap32LE(frameTable[frame])]);
+#endif
 }
 
 /**
