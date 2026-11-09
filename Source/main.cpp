@@ -34,8 +34,19 @@ extern "C" const char *__asan_default_options() // NOLINT(bugprone-reserved-iden
 }
 #endif
 
+#ifdef __N64__
+extern "C" int n64_main(int argc, char **argv, int (*fn)(int, char **));
+static int N64RealMain(int argc, char **argv)
+{
+	return devilution::DiabloMain(argc, argv);
+}
+#endif
+
 extern "C" int main(int argc, char **argv)
 {
+#ifdef __N64__
+	return n64_main(argc, argv, N64RealMain);
+#endif
 #ifdef __SWITCH__
 	switch_romfs_init();
 	switch_enable_network();

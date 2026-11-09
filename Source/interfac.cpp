@@ -51,6 +51,10 @@
 #if defined(__EMSCRIPTEN__)
 #define LOAD_ON_MAIN_THREAD
 #endif
+// N64: carga en el hilo del motor (hilos cooperativos, como en Hellspawn)
+#if defined(__N64__) && !defined(LOAD_ON_MAIN_THREAD)
+#define LOAD_ON_MAIN_THREAD
+#endif
 
 namespace devilution {
 

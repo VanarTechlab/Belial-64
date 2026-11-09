@@ -52,6 +52,10 @@ struct SaveWriter {
 	explicit SaveWriter(std::string &&dir)
 	    : dir_(std::move(dir))
 	{
+#ifdef __N64__
+		// N64 (leccion de Hellspawn): nadie mas crea la carpeta del guardado
+		RecursivelyCreateDir(dir_.c_str());
+#endif
 	}
 
 	SaveWriter(std::string &&dir, bool /*carryForward*/)
