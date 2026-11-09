@@ -2580,7 +2580,11 @@ void InitPadmapActions()
 	    "PadMenuNavigator",
 	    N_("Gamepad menu navigator"),
 	    N_("Hold to access gamepad menu navigation."),
+#ifdef __N64__ // N64 (f2v35): START abre el menu de la partida; los paneles van con la cruceta
+	    ControllerButton_NONE,
+#else
 	    ControllerButton_BUTTON_START,
+#endif
 	    [] { PadMenuNavigatorActive = true; },
 	    [] { PadMenuNavigatorActive = false; });
 	auto toggleGameMenu = [] {
@@ -2596,19 +2600,27 @@ void InitPadmapActions()
 	    "ToggleGameMenu1",
 	    N_("Toggle game menu"),
 	    N_("Opens the game menu."),
+#ifdef __N64__
+	    ControllerButton_BUTTON_START,
+#else
 	    {
 	        ControllerButton_BUTTON_BACK,
 	        ControllerButton_BUTTON_START,
 	    },
+#endif
 	    toggleGameMenu);
 	options.Padmapper.AddAction(
 	    "ToggleGameMenu2",
 	    N_("Toggle game menu"),
 	    N_("Opens the game menu."),
+#ifdef __N64__
+	    ControllerButton_NONE,
+#else
 	    {
 	        ControllerButton_BUTTON_START,
 	        ControllerButton_BUTTON_BACK,
 	    },
+#endif
 	    toggleGameMenu);
 	options.Padmapper.AddAction(
 	    "QuickSave",
