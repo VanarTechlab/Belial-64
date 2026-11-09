@@ -286,7 +286,7 @@ void UpdateAvailableResolutions()
 	}
 #endif
 
-#ifndef __3DS__
+#if !defined(__3DS__) && !defined(__N64__)
 	// Only display compatible resolutions.
 	std::erase_if(sizes, [](const Size &s) { return s.width < 640 || s.height < 480; });
 #endif

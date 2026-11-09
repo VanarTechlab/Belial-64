@@ -552,9 +552,11 @@ OptionEntryResolution::OptionEntryResolution()
 void OptionEntryResolution::LoadFromIni(std::string_view category)
 {
 #ifdef __N64__
-	// N64: resolucion fija (memoria y velocidad), se ignora lo guardado en diablo.ini
-	(void)category;
-	size_ = { DEFAULT_WIDTH, DEFAULT_HEIGHT };
+	// N64 (f2v23): solo 400x300 (rapida), 512x384 o 640x480 (vista completa como en el PC).
+	// Se elige en Ajustes > Graficos > Resolucion desde el menu principal.
+	size_ = { ini->getInt(category, "Width", DEFAULT_WIDTH), ini->getInt(category, "Height", DEFAULT_HEIGHT) };
+	if (!((size_.width == 640 && size_.height == 480) || (size_.width == 512 && size_.height == 384) || (size_.width == 400 && size_.height == 300)))
+		size_ = { DEFAULT_WIDTH, DEFAULT_HEIGHT };
 #else
 	size_ = { ini->getInt(category, "Width", DEFAULT_WIDTH), ini->getInt(category, "Height", DEFAULT_HEIGHT) };
 #endif
