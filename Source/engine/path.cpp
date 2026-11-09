@@ -181,7 +181,23 @@ int8_t GetPathDirection(Point startPosition, Point destinationPosition)
 	return PathDirections[(3 * (destinationPosition.y - startPosition.y)) + 4 + destinationPosition.x - startPosition.x];
 }
 
+#ifdef __N64__
+extern "C" unsigned n64_us(void);
+extern "C" void n64_prof_add(int which, unsigned us);
+static int FindPathImpl(tl::function_ref<bool(Point, Point)> canStep, tl::function_ref<bool(Point)> posOk, Point startPosition, Point destinationPosition, int8_t *path, size_t maxPathLength);
+// f2v43: medir cuanto se tarda en buscar caminos
 int FindPath(tl::function_ref<bool(Point, Point)> canStep, tl::function_ref<bool(Point)> posOk, Point startPosition, Point destinationPosition, int8_t *path, size_t maxPathLength)
+{
+	const unsigned t0 = n64_us();
+	const int r = FindPathImpl(canStep, posOk, startPosition, destinationPosition, path, maxPathLength);
+	n64_prof_add(14, n64_us() - t0);
+	n64_prof_add(15, 1);
+	return r;
+}
+static int FindPathImpl(tl::function_ref<bool(Point, Point)> canStep, tl::function_ref<bool(Point)> posOk, Point startPosition, Point destinationPosition, int8_t *path, size_t maxPathLength)
+#else
+int FindPath(tl::function_ref<bool(Point, Point)> canStep, tl::function_ref<bool(Point)> posOk, Point startPosition, Point destinationPosition, int8_t *path, size_t maxPathLength)
+#endif
 {
 	const PointT start { startPosition };
 	const PointT dest { destinationPosition };

@@ -18,6 +18,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <new>
 #include <numeric>
 #include <optional>
 #include <string>
@@ -3565,20 +3566,24 @@ void n64_mon_log(void);
 }
 namespace {
 static_assert(sizeof(uintptr_t) == 4, "cabecera de 8 bytes: direccion + paleta");
-constexpr size_t N64HdrArenaSize = 48 * 1024;
-uint8_t *N64HdrArena = nullptr;
+// f2v43: zona fija (no se reserva ni se suelta): 40 KiB para los monstruos del nivel y 9 huecos
+// de 1792 bytes para las animaciones del jugador (uno por animacion).
+constexpr size_t N64HdrArenaSize = 40 * 1024;
+constexpr size_t N64PlrSlotSize = 1792;
+constexpr size_t N64PlrSlots = 9;
+alignas(16) uint8_t N64ClxArena[N64HdrArenaSize + N64PlrSlotSize * N64PlrSlots];
+uint8_t *const N64HdrArena = N64ClxArena;
 size_t N64HdrUsed = 0;
+struct N64ArenaInit {
+	N64ArenaInit()
+	{
+		n64_clxhdr_lo = reinterpret_cast<uintptr_t>(N64ClxArena);
+		n64_clxhdr_len = sizeof(N64ClxArena);
+	}
+} N64ArenaInitOnce;
 
 uint8_t *N64HdrAlloc(size_t n)
 {
-	if (N64HdrArena == nullptr) {
-		N64HdrArena = static_cast<uint8_t *>(malloc(N64HdrArenaSize));
-		if (N64HdrArena == nullptr)
-			return nullptr;
-		N64HdrUsed = 0;
-		n64_clxhdr_lo = reinterpret_cast<uintptr_t>(N64HdrArena);
-		n64_clxhdr_len = N64HdrArenaSize;
-	}
 	n = (n + 7) & ~size_t { 7 };
 	if (N64HdrUsed + n > N64HdrArenaSize)
 		return nullptr;
@@ -3589,11 +3594,20 @@ uint8_t *N64HdrAlloc(size_t n)
 
 void N64HdrFree()
 {
-	free(N64HdrArena);
-	N64HdrArena = nullptr;
 	N64HdrUsed = 0;
-	n64_clxhdr_lo = 0;
-	n64_clxhdr_len = 0;
+}
+
+// hueco del jugador que se esta rellenando
+uint8_t *N64PlrSlotBase = nullptr;
+size_t N64PlrSlotUsed = 0;
+uint8_t *N64PlrAlloc(size_t n)
+{
+	n = (n + 7) & ~size_t { 7 };
+	if (N64PlrSlotBase == nullptr || N64PlrSlotUsed + n > N64PlrSlotSize)
+		return nullptr;
+	uint8_t *p = N64PlrSlotBase + N64PlrSlotUsed;
+	N64PlrSlotUsed += n;
+	return p;
 }
 
 uint32_t N64ReadLE32(uint32_t addr)
@@ -3606,12 +3620,12 @@ uint32_t N64ReadLE32(uint32_t addr)
 // Construye la cabecera compacta de una lista CLX que esta en el cartucho en 'listAddr'.
 // Formato: [u32 direccion][u32 paleta][cabecera CLX: n, n+2 desplazamientos]. Devuelve el
 // puntero a la cabecera CLX (lo que se guarda en ClxSpriteList) o nullptr.
-uint8_t *N64BuildList(uint32_t listAddr, uint32_t maxSize, const uint8_t *trn)
+uint8_t *N64BuildList(uint32_t listAddr, uint32_t maxSize, const uint8_t *trn, uint8_t *(*alloc)(size_t) = N64HdrAlloc)
 {
 	const uint32_t n = N64ReadLE32(listAddr);
 	if (n == 0 || n > 512 || (n + 2) * 4 > maxSize)
 		return nullptr;
-	uint8_t *p = N64HdrAlloc(8 + (n + 2) * 4);
+	uint8_t *p = alloc(8 + (n + 2) * 4);
 	if (p == nullptr)
 		return nullptr;
 	reinterpret_cast<uint32_t *>(p)[0] = listAddr;
@@ -3625,7 +3639,6 @@ bool N64LoadMonsterGFXFromCart(CMonster &monsterType)
 	const MonsterData &monsterData = monsterType.data();
 	const size_t numAnims = GetNumAnims(monsterData);
 	const size_t arenaMark = N64HdrUsed;
-	const bool hadArena = N64HdrArena != nullptr;
 
 	const uint8_t *trn = nullptr;
 	if (!monsterData.trnFile.empty()) {
@@ -3702,10 +3715,7 @@ bool N64LoadMonsterGFXFromCart(CMonster &monsterType)
 			result[i] = ClxSpriteListOrSheet { sheet, static_cast<uint16_t>(numLists) };
 	}
 	if (!ok) {
-		if (hadArena)
-			N64HdrUsed = arenaMark;
-		else
-			N64HdrFree();
+		N64HdrUsed = arenaMark;
 		LogVerbose("N64: {} no se pudo poner en el cartucho; se carga en la RAM", monsterData.spritePath());
 		return false;
 	}
@@ -3716,6 +3726,65 @@ bool N64LoadMonsterGFXFromCart(CMonster &monsterType)
 	return true;
 }
 } // namespace
+
+extern "C" void n64_mon_cache_prepare(void);
+
+// f2v43: animacion del jugador (una hoja .clx de 8 direcciones) en el cartucho. La cabecera de la
+// hoja va en la RAM normal (la posee OwnedClxSpriteSheet) y las listas en el hueco 'slot' de la
+// zona fija; los desplazamientos de la hoja apuntan alli (aritmetica de 32 bits).
+bool N64LoadPlayerSheetFromCart(const char *assetPath, const uint8_t *trnA, const uint8_t *trnB, size_t slot,
+    std::unique_ptr<uint8_t[]> &outHeader, uint16_t &outNumLists)
+{
+	if (slot >= N64PlrSlots)
+		return false;
+	N64PlrSlotBase = N64ClxArena + N64HdrArenaSize + slot * N64PlrSlotSize;
+	N64PlrSlotUsed = 0;
+	const uint8_t *trn = nullptr;
+	if (trnA != nullptr || trnB != nullptr) {
+		uint8_t *t = N64PlrAlloc(256);
+		if (t == nullptr)
+			return false;
+		for (unsigned x = 0; x < 256; ++x) {
+			uint8_t v = static_cast<uint8_t>(x);
+			if (trnA != nullptr)
+				v = trnA[v];
+			if (trnB != nullptr)
+				v = trnB[v];
+			t[x] = v;
+		}
+		trn = t;
+	}
+	const AssetRef ref = FindAsset(assetPath);
+	uint32_t size = 0;
+	const uint32_t addr = ref.ok() ? n64_mon_copy(ref.path, &size) : 0;
+	if (addr == 0)
+		return false;
+	const uint32_t first = N64ReadLE32(addr);
+	if (first * 4 + 8 <= size && N64ReadLE32(addr + first * 4 + 4) == size)
+		return false; // es una lista, no una hoja
+	const uint32_t numLists = first / 4;
+	if (numLists == 0 || numLists > 16)
+		return false;
+	uint8_t raw[64];
+	n64_mon_read(raw, addr, numLists * 4);
+	std::unique_ptr<uint8_t[]> header { new (std::nothrow) uint8_t[numLists * 4] };
+	if (header == nullptr)
+		return false;
+	for (uint32_t k = 0; k < numLists; ++k) {
+		const uint32_t off = LoadLE32(&raw[k * 4]);
+		if (off >= size)
+			return false;
+		uint8_t *list = N64BuildList(addr + off, size - off, trn, N64PlrAlloc);
+		if (list == nullptr)
+			return false;
+		WriteLE32(&header[k * 4], static_cast<uint32_t>(reinterpret_cast<uintptr_t>(list) - reinterpret_cast<uintptr_t>(header.get())));
+	}
+	n64_mon_cache_prepare();
+	outHeader = std::move(header);
+	outNumLists = static_cast<uint16_t>(numLists);
+	LogVerbose("N64: jugador {} en el cartucho (hueco {}, {} bytes)", assetPath, slot, N64PlrSlotUsed);
+	return true;
+}
 #endif
 
 std::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSpritesData &&spritesData)
@@ -4454,9 +4523,23 @@ void RemoveEnemyReferences(const Player &player)
 	}
 }
 
+#ifdef __N64__
+extern "C" void n64_prof_add(int which, unsigned us);
+#endif
 void ProcessMonsters()
 {
 	DeleteMonsterList();
+#ifdef __N64__
+	{
+		unsigned awake = 0;
+		for (size_t i = 0; i < ActiveMonsterCount; i++) {
+			if (Monsters[ActiveMonsters[i]].activeForTicks != 0)
+				awake++;
+		}
+		n64_prof_add(16, awake);
+		n64_prof_add(19, static_cast<unsigned>(ActiveMonsterCount));
+	}
+#endif
 
 	assert(ActiveMonsterCount <= MaxMonsters);
 	for (size_t i = 0; i < ActiveMonsterCount; i++) {

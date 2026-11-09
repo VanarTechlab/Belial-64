@@ -2079,6 +2079,11 @@ bool IsPlayerUnarmed(Player &player)
 	return animWeaponId == PlayerWeaponGraphic::Unarmed;
 }
 
+#ifdef __N64__
+bool N64LoadPlayerSheetFromCart(const char *assetPath, const uint8_t *trnA, const uint8_t *trnB, size_t slot,
+    std::unique_ptr<uint8_t[]> &outHeader, uint16_t &outNumLists);
+#endif
+
 void LoadPlrGFX(Player &player, player_graphic graphic)
 {
 	if (HeadlessMode)
@@ -2145,6 +2150,22 @@ void LoadPlrGFX(Player &player, player_graphic graphic)
 	char pszName[256];
 	GetPlayerGraphicsPath(path, std::string_view(prefixBuf, 3), szCel, pszName);
 	const uint16_t animationWidth = GetPlayerSpriteWidth(cls, graphic, animWeaponId);
+#ifdef __N64__
+	// f2v43: la animacion de nuestro personaje se deja en el cartucho (como los monstruos)
+	if (&player == MyPlayer) {
+		char clxPath[256];
+		*BufCopy(clxPath, pszName, DEVILUTIONX_CL2_EXT) = '\0';
+		const std::optional<std::array<uint8_t, 256>> gTRN = GetPlayerGraphicTRN(pszName);
+		const std::optional<std::array<uint8_t, 256>> cTRN = GetClassTRN(player);
+		std::unique_ptr<uint8_t[]> header;
+		uint16_t numLists = 0;
+		if (N64LoadPlayerSheetFromCart(clxPath, gTRN ? gTRN->data() : nullptr, cTRN ? cTRN->data() : nullptr,
+		        static_cast<size_t>(graphic), header, numLists)) {
+			animationData.sprites = OwnedClxSpriteSheet { std::move(header), numLists };
+			return;
+		}
+	}
+#endif
 	animationData.sprites = LoadCl2Sheet(pszName, animationWidth);
 	std::optional<std::array<uint8_t, 256>> graphicTRN = GetPlayerGraphicTRN(pszName);
 	if (graphicTRN) {

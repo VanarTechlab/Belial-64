@@ -1562,36 +1562,59 @@ void UpdateMonsterLights()
 	}
 }
 
+#ifdef __N64__
+// f2v43: medir cada parte de la logica (sdl_n64.c lo resume cada 10 s)
+#define N64_T0() unsigned n64Tp = n64_us()
+#define N64_T(slot) do { const unsigned n64Tn = n64_us(); n64_prof_add(slot, n64Tn - n64Tp); n64Tp = n64Tn; } while (0)
+#else
+#define N64_T0() do { } while (0)
+#define N64_T(slot) do { } while (0)
+#endif
 void GameLogic()
 {
+	N64_T0();
+#ifdef __N64__
+	n64_prof_add(13, 1);
+#endif
 	if (!ProcessInput()) {
 		return;
 	}
+	N64_T(18);
 	if (gbProcessPlayers) {
 		gGameLogicStep = GameLogicStep::ProcessPlayers;
 		ProcessPlayers();
 	}
+	N64_T(5);
 	if (leveltype != DTYPE_TOWN) {
 		gGameLogicStep = GameLogicStep::ProcessMonsters;
 #ifdef _DEBUG
 		if (!DebugInvisible)
 #endif
 			ProcessMonsters();
+		N64_T(6);
 		gGameLogicStep = GameLogicStep::ProcessObjects;
 		ProcessObjects();
+		N64_T(7);
 		gGameLogicStep = GameLogicStep::ProcessMissiles;
 		ProcessMissiles();
+		N64_T(8);
 		gGameLogicStep = GameLogicStep::ProcessItems;
 		ProcessItems();
+		N64_T(9);
 		ProcessLightList();
+		N64_T(10);
 		ProcessVisionList();
+		N64_T(11);
 	} else {
 		gGameLogicStep = GameLogicStep::ProcessTowners;
 		ProcessTowners();
+		N64_T(17);
 		gGameLogicStep = GameLogicStep::ProcessItemsTown;
 		ProcessItems();
+		N64_T(9);
 		gGameLogicStep = GameLogicStep::ProcessMissilesTown;
 		ProcessMissiles();
+		N64_T(8);
 	}
 	gGameLogicStep = GameLogicStep::None;
 
@@ -1608,6 +1631,7 @@ void GameLogic()
 	pfile_update(false);
 
 	plrctrls_after_game_logic();
+	N64_T(12);
 }
 
 void TimeoutCursor(bool bTimeout)
