@@ -67,8 +67,12 @@ void InitCorpses()
 
 	nd++; // Unused blood spatter
 
-	if (!HeadlessMode)
+	if (!HeadlessMode) {
+#ifdef __N64__
+		(void)GetMissileSpriteData(MissileGraphicID::StoneCurseShatter).LoadGFX(); // misiles bajo demanda en N64
+#endif
 		Corpses[nd].sprites.emplace(*GetMissileSpriteData(MissileGraphicID::StoneCurseShatter).sprites);
+	}
 	Corpses[nd].frame = 11;
 	Corpses[nd].width = 128;
 	Corpses[nd].translationPaletteIndex = 0;
