@@ -251,8 +251,17 @@ void InitLighting()
 	TransList = {};
 }
 
+#ifdef __N64__
+// f2v41: como en la DSi (NDS-SINLUZMISIL): los proyectiles no dan luz (en la DSi 11 -> 28 fps)
+bool N64NoLight = false;
+#endif
+
 int AddLight(Point position, uint8_t radius)
 {
+#ifdef __N64__
+	if (N64NoLight)
+		return NO_LIGHT;
+#endif
 #ifdef _DEBUG
 	if (DisableLighting)
 		return NO_LIGHT;

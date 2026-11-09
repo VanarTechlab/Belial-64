@@ -70,6 +70,10 @@
 
 namespace devilution {
 
+#ifdef __N64__
+extern bool N64NoLight;
+#endif
+
 std::list<Missile> Missiles;
 bool MissilePreFlag;
 
@@ -2849,7 +2853,13 @@ Missile *AddMissile(WorldTilePosition src, WorldTilePosition dst, Direction midi
 	}
 
 	AddMissileParameter parameter = { dst, midir, parent, false };
+#ifdef __N64__
+	N64NoLight = true;
+#endif
 	missileData.addFn(missile, parameter);
+#ifdef __N64__
+	N64NoLight = false;
+#endif
 	if (parameter.spellFizzled) {
 		return nullptr;
 	}
@@ -4226,8 +4236,15 @@ void ProcessMissiles()
 
 	for (auto &missile : Missiles) {
 		const MissileData &missileData = GetMissileData(missile._mitype);
-		if (missileData.processFn != nullptr)
+		if (missileData.processFn != nullptr) {
+#ifdef __N64__
+			N64NoLight = true;
+#endif
 			missileData.processFn(missile);
+#ifdef __N64__
+			N64NoLight = false;
+#endif
+		}
 		if (missile._miAnimFlags == MissileGraphicsFlags::NotAnimated)
 			continue;
 

@@ -93,6 +93,8 @@
 #include "utils/endian_swap.hpp"
 #include "utils/enum_traits.h"
 #include "utils/file_name_generator.hpp"
+#include "utils/endian_write.hpp"
+#include "engine/assets.hpp"
 #include "utils/format.hpp"
 #include "utils/is_of.hpp"
 #include "utils/language.h"
@@ -3548,6 +3550,174 @@ std::expected<void, std::string> InitMonsterSND(CMonster &monsterType)
 	return {};
 }
 
+#ifdef __N64__
+// f2v41: graficos de monstruos en la memoria del cartucho (ver sdl_n64.c). En la RAM queda solo una
+// copia de las cabeceras CLX en una zona propia; ClxSpriteList::operator[] reconoce esa zona y pide
+// cada fotograma al cartucho.
+extern "C" {
+uintptr_t n64_clxhdr_lo = 0;
+uintptr_t n64_clxhdr_len = 0;
+uint32_t n64_mon_copy(const char *path, uint32_t *size);
+void n64_mon_read(void *dst, uint32_t addr, uint32_t len);
+void n64_mon_level_begin(void);
+void n64_mon_cache_release(void);
+void n64_mon_log(void);
+}
+namespace {
+static_assert(sizeof(uintptr_t) == 4, "cabecera de 8 bytes: direccion + paleta");
+constexpr size_t N64HdrArenaSize = 48 * 1024;
+uint8_t *N64HdrArena = nullptr;
+size_t N64HdrUsed = 0;
+
+uint8_t *N64HdrAlloc(size_t n)
+{
+	if (N64HdrArena == nullptr) {
+		N64HdrArena = static_cast<uint8_t *>(malloc(N64HdrArenaSize));
+		if (N64HdrArena == nullptr)
+			return nullptr;
+		N64HdrUsed = 0;
+		n64_clxhdr_lo = reinterpret_cast<uintptr_t>(N64HdrArena);
+		n64_clxhdr_len = N64HdrArenaSize;
+	}
+	n = (n + 7) & ~size_t { 7 };
+	if (N64HdrUsed + n > N64HdrArenaSize)
+		return nullptr;
+	uint8_t *p = N64HdrArena + N64HdrUsed;
+	N64HdrUsed += n;
+	return p;
+}
+
+void N64HdrFree()
+{
+	free(N64HdrArena);
+	N64HdrArena = nullptr;
+	N64HdrUsed = 0;
+	n64_clxhdr_lo = 0;
+	n64_clxhdr_len = 0;
+}
+
+uint32_t N64ReadLE32(uint32_t addr)
+{
+	uint8_t b[4];
+	n64_mon_read(b, addr, 4);
+	return LoadLE32(b);
+}
+
+// Construye la cabecera compacta de una lista CLX que esta en el cartucho en 'listAddr'.
+// Formato: [u32 direccion][u32 paleta][cabecera CLX: n, n+2 desplazamientos]. Devuelve el
+// puntero a la cabecera CLX (lo que se guarda en ClxSpriteList) o nullptr.
+uint8_t *N64BuildList(uint32_t listAddr, uint32_t maxSize, const uint8_t *trn)
+{
+	const uint32_t n = N64ReadLE32(listAddr);
+	if (n == 0 || n > 512 || (n + 2) * 4 > maxSize)
+		return nullptr;
+	uint8_t *p = N64HdrAlloc(8 + (n + 2) * 4);
+	if (p == nullptr)
+		return nullptr;
+	reinterpret_cast<uint32_t *>(p)[0] = listAddr;
+	reinterpret_cast<uintptr_t *>(p)[1] = reinterpret_cast<uintptr_t>(trn);
+	n64_mon_read(p + 8, listAddr, (n + 2) * 4);
+	return p + 8;
+}
+
+bool N64LoadMonsterGFXFromCart(CMonster &monsterType)
+{
+	const MonsterData &monsterData = monsterType.data();
+	const size_t numAnims = GetNumAnims(monsterData);
+	const size_t arenaMark = N64HdrUsed;
+	const bool hadArena = N64HdrArena != nullptr;
+
+	const uint8_t *trn = nullptr;
+	if (!monsterData.trnFile.empty()) {
+		char path[64];
+		*BufCopy(path, "monsters\\", monsterData.trnFile, ".trn") = '\0';
+		uint8_t *t = N64HdrAlloc(256);
+		if (t == nullptr)
+			return false;
+		std::array<uint8_t, 256> colorTranslations;
+		LoadFileInMem(path, colorTranslations);
+		std::replace(colorTranslations.begin(), colorTranslations.end(), 255, 0);
+		memcpy(t, colorTranslations.data(), 256);
+		trn = t;
+	}
+
+	std::array<OptionalClxSpriteListOrSheet, MonsterSpritesData::MaxAnims> result;
+	const FileNameWithCharAffixGenerator names({ "monsters\\", monsterData.spritePath() }, DEVILUTIONX_CL2_EXT, Animletter);
+	bool ok = true;
+	for (size_t i = 0; i < numAnims && ok; ++i) {
+		if (!monsterData.hasAnim(i))
+			continue;
+		const AssetRef ref = FindAsset(names(i));
+		uint32_t size = 0;
+		const uint32_t addr = ref.ok() ? n64_mon_copy(ref.path, &size) : 0;
+		if (addr == 0) {
+			ok = false;
+			break;
+		}
+		const uint8_t *animTrn = trn;
+		if (i == 1 && IsAnyOf(monsterType.type, MT_COUNSLR, MT_MAGISTR, MT_CABALIST, MT_ADVOCATE))
+			animTrn = nullptr;
+		// lista o grupo de listas (igual que GetNumListsFromClxListOrSheetBuffer)
+		const uint32_t maybeNumFrames = N64ReadLE32(addr);
+		bool isSheet = true;
+		if (maybeNumFrames * 4 + 8 <= size && N64ReadLE32(addr + maybeNumFrames * 4 + 4) == size)
+			isSheet = false;
+		if (!isSheet) {
+			uint8_t *list = N64BuildList(addr, size, animTrn);
+			if (list == nullptr) {
+				ok = false;
+				break;
+			}
+			result[i] = ClxSpriteListOrSheet { list, 0 };
+			continue;
+		}
+		const uint32_t numLists = maybeNumFrames / 4;
+		if (numLists == 0 || numLists > 16) {
+			ok = false;
+			break;
+		}
+		uint32_t offsets[16];
+		uint8_t raw[64];
+		n64_mon_read(raw, addr, numLists * 4);
+		for (uint32_t k = 0; k < numLists; ++k)
+			offsets[k] = LoadLE32(&raw[k * 4]);
+		uint8_t *sheet = N64HdrAlloc(numLists * 4);
+		if (sheet == nullptr) {
+			ok = false;
+			break;
+		}
+		for (uint32_t k = 0; k < numLists && ok; ++k) {
+			if (offsets[k] >= size) {
+				ok = false;
+				break;
+			}
+			uint8_t *list = N64BuildList(addr + offsets[k], size - offsets[k], animTrn);
+			if (list == nullptr) {
+				ok = false;
+				break;
+			}
+			WriteLE32(&sheet[k * 4], static_cast<uint32_t>(list - sheet));
+		}
+		if (ok)
+			result[i] = ClxSpriteListOrSheet { sheet, static_cast<uint16_t>(numLists) };
+	}
+	if (!ok) {
+		if (hadArena)
+			N64HdrUsed = arenaMark;
+		else
+			N64HdrFree();
+		LogVerbose("N64: {} no se pudo poner en el cartucho; se carga en la RAM", monsterData.spritePath());
+		return false;
+	}
+	for (size_t i = 0; i < numAnims; ++i)
+		monsterType.anims[i].sprites = result[i];
+	monsterType.animData = std::unique_ptr<std::byte[]> { new std::byte[1] };
+	LogVerbose("N64: monstruo {} en el cartucho (cabeceras {} bytes)", monsterData.spritePath(), N64HdrUsed - arenaMark);
+	return true;
+}
+} // namespace
+#endif
+
 std::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSpritesData &&spritesData)
 {
 	if (HeadlessMode)
@@ -3555,6 +3725,10 @@ std::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSp
 
 	const _monster_id mtype = monsterType.type;
 	const MonsterData &monsterData = MonstersData[mtype];
+#ifdef __N64__
+	const bool fromCart = spritesData.data == nullptr && N64LoadMonsterGFXFromCart(monsterType);
+	if (!fromCart) {
+#endif
 	if (spritesData.data == nullptr)
 		spritesData = LoadMonsterSpritesData(monsterData);
 	monsterType.animData = std::move(spritesData.data);
@@ -3576,6 +3750,9 @@ std::expected<void, std::string> InitMonsterGFX(CMonster &monsterType, MonsterSp
 	if (!monsterData.trnFile.empty()) {
 		InitMonsterTRN(monsterType);
 	}
+#ifdef __N64__
+	}
+#endif
 
 	if (IsAnyOf(mtype, MT_NMAGMA, MT_YMAGMA, MT_BMAGMA, MT_WMAGMA))
 		RETURN_IF_ERROR(GetMissileSpriteData(MissileGraphicID::MagmaBall).LoadGFX());
@@ -3638,6 +3815,17 @@ std::expected<void, std::string> InitAllMonsterGFX()
 		if (monsterTypes.empty())
 			continue;
 		CMonster &firstMonster = LevelMonsterTypes[monsterTypes[0]];
+#ifdef __N64__
+		// cada tipo con su cabecera (la paleta va en ella); el archivo del cartucho se comparte
+		for (const size_t idx : monsterTypes) {
+			CMonster &m = LevelMonsterTypes[idx];
+			if (m.animData != nullptr)
+				continue;
+			RETURN_IF_ERROR(InitMonsterGFX(m));
+			totalUniqueBytes += 1;
+		}
+		continue;
+#endif
 		if (firstMonster.animData != nullptr)
 			continue;
 		MonsterSpritesData spritesData = LoadMonsterSpritesData(firstMonster.data());
@@ -3653,6 +3841,9 @@ std::expected<void, std::string> InitAllMonsterGFX()
 		RETURN_IF_ERROR(InitMonsterGFX(firstMonster, std::move(spritesData)));
 	}
 	LogVerbose(" Total monster graphics:                 {:>4d} KiB {:>4d} KiB", totalUniqueBytes / 1024, totalBytes / 1024);
+#ifdef __N64__
+	n64_mon_log();
+#endif
 
 	if (totalUniqueBytes > 0) {
 		// we loaded new sprites, check if we need to update existing monsters
@@ -4347,6 +4538,11 @@ void ProcessMonsters()
 
 void FreeMonsters()
 {
+#ifdef __N64__
+	N64HdrFree();
+	n64_mon_cache_release();
+	n64_mon_level_begin();
+#endif
 	for (CMonster &monsterType : LevelMonsterTypes) {
 		monsterType.animData = nullptr;
 		monsterType.corpseId = 0;

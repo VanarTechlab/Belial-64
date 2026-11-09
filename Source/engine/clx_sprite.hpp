@@ -33,6 +33,15 @@
 #include "utils/endian_read.hpp"
 #include "utils/intrusive_optional.hpp"
 
+#ifdef __N64__
+#include <type_traits>
+extern "C" {
+extern uintptr_t n64_clxhdr_lo;
+extern uintptr_t n64_clxhdr_len;
+const uint8_t *n64_mon_frame(const uint8_t *list, uint32_t begin, uint32_t size);
+}
+#endif
+
 namespace devilution {
 
 class OptionalClxSprite;
@@ -123,6 +132,11 @@ public:
 		assert(spriteIndex < numSprites());
 		const uint32_t begin = spriteOffset(spriteIndex);
 		const uint32_t end = spriteOffset(spriteIndex + 1);
+#ifdef __N64__
+		// f2v41: graficos de monstruos en el cartucho; en la RAM solo esta la cabecera
+		if (!std::is_constant_evaluated() && static_cast<uintptr_t>(reinterpret_cast<uintptr_t>(data_) - n64_clxhdr_lo) < n64_clxhdr_len)
+			return ClxSprite { n64_mon_frame(data_, begin, end - begin), end - begin };
+#endif
 		return ClxSprite { &data_[begin], end - begin };
 	}
 
