@@ -15,9 +15,24 @@ namespace devilution {
 
 namespace lua {
 
+#ifdef __N64__
+extern "C" void n64_lua_check(const char *where);
+#endif
+
 template <typename... Args>
 void CallLuaEvent(std::string_view name, Args &&...args)
 {
+#ifdef __N64__
+	{
+		static int n64Calls;
+		if (n64Calls < 12) {
+			n64Calls++;
+			std::string where = "evento ";
+			where.append(name);
+			n64_lua_check(where.c_str());
+		}
+	}
+#endif
 	sol::table *events = GetLuaEvents();
 	if (events == nullptr) {
 		return;

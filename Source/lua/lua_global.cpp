@@ -365,3 +365,21 @@ sol::object SafeCallResult(sol::protected_function_result result, bool optional)
 }
 
 } // namespace devilution
+
+#ifdef __N64__
+// N64: prueba de integridad de la memoria de Lua (una recoleccion completa recorre todos sus
+// objetos; si alguien piso esa memoria, falla aqui y sabemos entre que dos puntos ocurrio).
+extern "C" void n64_log(const char *fmt, ...);
+extern "C" void n64_log_flush(void);
+extern "C" int n64_check_guards(const char *where);
+extern "C" void n64_lua_check(const char *where)
+{
+	n64_check_guards(where);
+	n64_log("prueba Lua [%s]...", where);
+	n64_log_flush();
+	lua_State *L = devilution::GetLuaState().lua_state();
+	lua_gc(L, LUA_GCCOLLECT, 0);
+	n64_log("prueba Lua [%s] OK, Lua usa %d KiB", where, lua_gc(L, LUA_GCCOUNT, 0));
+	n64_log_flush();
+}
+#endif

@@ -1836,11 +1836,19 @@ void scrollrt_draw_game_screen()
 	RenderPresent();
 }
 
+#ifdef __N64__
+extern "C" void n64_lua_check(const char *where);
+static int n64DrawChecks;
+#endif
 void DrawAndBlit()
 {
 	if (!gbRunGame || HeadlessMode) {
 		return;
 	}
+#ifdef __N64__
+	if (n64DrawChecks < 3)
+		n64_lua_check("inicio de DrawAndBlit");
+#endif
 
 	int hgt = 0;
 	bool drawHealth = IsRedrawComponent(PanelDrawComponent::Health);
@@ -1874,6 +1882,10 @@ void DrawAndBlit()
 
 	this_sdl_thread::yield();
 	DrawView(out, ViewPosition);
+#ifdef __N64__
+	if (n64DrawChecks < 3)
+		n64_lua_check("tras DrawView");
+#endif
 	if (drawCtrlPan) {
 		DrawMainPanel(out);
 	}
@@ -1911,6 +1923,12 @@ void DrawAndBlit()
 
 	DrawFPS(out);
 
+#ifdef __N64__
+	if (n64DrawChecks < 3) {
+		n64DrawChecks++;
+		n64_lua_check("antes de GameDrawComplete");
+	}
+#endif
 	lua::GameDrawComplete();
 
 	this_sdl_thread::yield();

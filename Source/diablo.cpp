@@ -868,12 +868,18 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 	}
 }
 
+#ifdef __N64__
+extern "C" void n64_lua_check(const char *where);
+#endif
 void RunGameLoop(interface_mode uMsg)
 {
 	demo::NotifyGameLoopStart();
 
 	nthread_ignore_mutex(true);
 	StartGame(uMsg);
+#ifdef __N64__
+	n64_lua_check("tras StartGame");
+#endif
 	assert(HeadlessMode || ghMainWnd);
 	EventHandler previousHandler = SetEventHandler(GameEventHandler);
 	run_delta_info();
@@ -885,7 +891,13 @@ void RunGameLoop(interface_mode uMsg)
 	LoadPWaterPalette();
 	PaletteFadeIn(8);
 	InitBackbufferState();
+#ifdef __N64__
+	n64_lua_check("antes de RedrawEverything");
+#endif
 	RedrawEverything();
+#ifdef __N64__
+	n64_lua_check("tras RedrawEverything");
+#endif
 	gbGameLoopStartup = true;
 	nthread_ignore_mutex(false);
 
