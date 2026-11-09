@@ -871,6 +871,12 @@ void SetFullscreenMode()
 
 #ifdef __N64__
 bool N64InGame = false;
+// N64 (f2v38): la pantalla de carga va a 640x480 (como los menus) aunque se este en partida
+void N64UseLoadingResolution(bool loading)
+{
+	forceResolution = loading ? Size { 640, 480 } : Size { 0, 0 };
+	ResizeWindow();
+}
 void N64UseGameResolution(bool inGame)
 {
 	N64InGame = inGame;

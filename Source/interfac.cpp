@@ -56,6 +56,10 @@
 #define LOAD_ON_MAIN_THREAD
 #endif
 
+#ifdef __N64__
+#include "utils/display.h"
+#endif
+
 namespace devilution {
 
 namespace {
@@ -645,8 +649,18 @@ void CompleteProgress()
 	}
 }
 
+#ifdef __N64__
+extern "C" void n64_cel_cache_release(void);
+void CalcViewportGeometry();
+#endif
 void ShowProgress(interface_mode uMsg)
 {
+#ifdef __N64__
+	// N64 (f2v38): antes de cargar se suelta la cache de CEL del nivel anterior (si no, no cabia la
+	// imagen de la pantalla de carga al bajar a la catedral) y la pantalla de carga va a 640x480
+	n64_cel_cache_release();
+	N64UseLoadingResolution(true);
+#endif
 	IsProgress = true;
 	gbSomebodyWonGameKludge = false;
 
@@ -696,6 +710,10 @@ void ShowProgress(interface_mode uMsg)
 	});
 	while (HandleProgressBarUpdate()) { }
 	loadThread.join();
+#endif
+#ifdef __N64__
+	N64UseLoadingResolution(false);
+	CalcViewportGeometry();
 #endif
 }
 
