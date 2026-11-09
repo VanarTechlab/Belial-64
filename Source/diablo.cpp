@@ -1364,6 +1364,7 @@ void DiabloDeinit()
 extern "C" void n64_raw_begin(void);
 extern "C" bool n64_raw_write(const void *data, uint32_t size);
 extern "C" void n64_raw_end(void);
+extern "C" void n64_raw_verify(const void *ref, uint32_t size);
 // N64: el CEL original (2 MB en el pueblo) no cabe entero en la RAM. Se copia a la memoria
 // del cartucho a trozos y en la RAM solo queda su tabla de posiciones; ReencodeDungeonCels
 // lee cada trozo del cartucho (ver reencode_dun_cels.cpp y sdl_n64.c).
@@ -1403,6 +1404,7 @@ std::expected<std::unique_ptr<std::byte[]>, std::string> LoadDungeonCelsToCart(c
 		done += n;
 	}
 	n64_raw_end();
+	n64_raw_verify(table.get(), static_cast<uint32_t>(tableSize));
 	return table;
 }
 #define DUNGEON_CEL_LOADER LoadDungeonCelsToCart
