@@ -239,6 +239,8 @@ void AddModsChangedHandler(tl::function_ref<void()> callback)
 
 void LuaReloadActiveMods()
 {
+	if (!CurrentLuaState)
+		return;
 	// Loaded without a sandbox.
 	CurrentLuaState->events = RunScript(/*env=*/std::nullopt, "devilutionx.events", /*optional=*/false);
 	CurrentLuaState->commonPackages["devilutionx.events"] = CurrentLuaState->events;
@@ -282,6 +284,11 @@ void LuaReloadActiveMods()
 
 void LuaInitialize()
 {
+#ifdef __N64__
+	// N64 (f2v40): sin Lua. Solo lo usan los mods; su estado ocupaba 312 KiB de RAM. Sin estado,
+	// los eventos (CallLuaEvent) no hacen nada.
+	return;
+#endif
 	CurrentLuaState.emplace();
 	sol::state &lua = CurrentLuaState->sol;
 	lua_setwarnf(lua.lua_state(), LuaWarn, /*ud=*/nullptr);
@@ -375,6 +382,8 @@ extern "C" int n64_check_guards(const char *where);
 extern "C" void n64_lua_check(const char *where)
 {
 	n64_check_guards(where);
+	if (!devilution::CurrentLuaState) // f2v40: sin Lua en la N64
+		return;
 	n64_log("prueba Lua [%s]...", where);
 	n64_log_flush();
 	lua_State *L = devilution::GetLuaState().lua_state();
