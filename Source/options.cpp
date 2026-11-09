@@ -551,7 +551,13 @@ OptionEntryResolution::OptionEntryResolution()
 }
 void OptionEntryResolution::LoadFromIni(std::string_view category)
 {
+#ifdef __N64__
+	// N64: resolucion fija (memoria y velocidad), se ignora lo guardado en diablo.ini
+	(void)category;
+	size_ = { DEFAULT_WIDTH, DEFAULT_HEIGHT };
+#else
 	size_ = { ini->getInt(category, "Width", DEFAULT_WIDTH), ini->getInt(category, "Height", DEFAULT_HEIGHT) };
+#endif
 }
 void OptionEntryResolution::SaveToIni(std::string_view category) const
 {
