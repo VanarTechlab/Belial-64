@@ -1362,69 +1362,19 @@ void DiabloDeinit()
 }
 
 #ifdef __N64__
-// N64: el CEL original (2 MB en el pueblo) no cabe en la RAM y la memoria del cartucho
-// solo es fiable en una zona (ver sdl_n64.c). Asi que el archivo se deja abierto en la SD y
-// ReencodeDungeonCels lo lee hacia delante, trozo a trozo, con n64_raw_frame(): los trozos
-// se piden en orden creciente, asi que basta con una ventana pequena.
-namespace {
-std::optional<AssetHandle> N64CelHandle;
-size_t N64CelSize;
-alignas(16) uint8_t N64CelWindow[32768];
-uint32_t N64CelWinStart;
-uint32_t N64CelWinLen;
+// N64: el CEL del nivel no cabe en la RAM y la consola no puede escribir en la memoria del
+// cartucho del ED64 Plus (solo el propio cartucho puede, copiando desde la SD por DMA).
+// Por eso el CEL ya convertido se prepara en el PC (sd:/devilutionx/n64/*.n64) y
+// ReencodeDungeonCels lo carga con el DMA del cartucho. Aqui solo se recuerda la ruta.
 } // namespace
-
-extern "C" const uint8_t *n64_raw_frame(uint32_t offset, uint32_t size)
-{
-	if (!N64CelHandle || size > sizeof(N64CelWindow))
-		return N64CelWindow;
-	if (offset < N64CelWinStart || offset + size > N64CelWinStart + N64CelWinLen) {
-		// mover la ventana: conservar lo que ya este leido a partir de offset
-		const uint32_t winEnd = N64CelWinStart + N64CelWinLen;
-		uint32_t keep = 0;
-		if (offset >= N64CelWinStart && offset < winEnd) {
-			keep = winEnd - offset;
-			std::memmove(N64CelWindow, N64CelWindow + (offset - N64CelWinStart), keep);
-		} else {
-			N64CelHandle->seek(static_cast<long>(offset));
-		}
-		N64CelWinStart = offset;
-		size_t want = std::min(sizeof(N64CelWindow) - keep, N64CelSize - (offset + keep));
-		if (!N64CelHandle->read(N64CelWindow + keep, want))
-			LogError("n64: fallo al leer el CEL en {}", offset + keep);
-		N64CelWinLen = keep + static_cast<uint32_t>(want);
-	}
-	return N64CelWindow + (offset - N64CelWinStart);
-}
-
-extern "C" void n64_raw_close(void)
-{
-	N64CelHandle = std::nullopt;
-}
-
+extern "C" const char *n64_cel_path;
+const char *n64_cel_path = nullptr;
+namespace {
 std::expected<std::unique_ptr<std::byte[]>, std::string> LoadDungeonCelsToCart(const char *path)
 {
-	size_t size;
-	AssetHandle handle = OpenAsset(path, size);
-	if (!handle.ok())
-		return std::unexpected(FailedToOpenFileErrorMessage(path, handle.error()));
-	uint32_t count;
-	if (size < 8 || !handle.read(&count, 4))
-		return std::unexpected(StrCat("CEL demasiado corto: ", path));
-	count = Swap32LE(count);
-	const size_t tableSize = (static_cast<size_t>(count) + 2) * 4;
-	if (tableSize > size)
-		return std::unexpected(StrCat("CEL con tabla invalida: ", path));
-	std::unique_ptr<std::byte[]> table { new std::byte[tableSize] };
-	WriteLE32(table.get(), count);
-	if (!handle.read(table.get() + 4, tableSize - 4))
-		return std::unexpected("handle.read failed");
-	N64CelSize = size;
-	N64CelWinStart = static_cast<uint32_t>(tableSize);
-	N64CelWinLen = 0;
-	N64CelHandle.emplace(std::move(handle));
-	LogVerbose("n64: CEL {} abierto para leer por partes ({} bytes, tabla {} bytes)", path, size, tableSize);
-	return table;
+	n64_cel_path = path;
+	std::unique_ptr<std::byte[]> dummy { new std::byte[8] {} };
+	return dummy;
 }
 #define DUNGEON_CEL_LOADER LoadDungeonCelsToCart
 #else

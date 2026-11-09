@@ -11,6 +11,8 @@
 
 #include "levels/dun_tile.hpp"
 #include "utils/attributes.h"
+#include "appfat.h"
+#include "utils/str_cat.hpp"
 #include "utils/endian_read.hpp"
 #include "utils/endian_swap.hpp"
 #include "utils/endian_write.hpp"
@@ -240,15 +242,32 @@ size_t GetReencodedSize(const uint8_t *dungeonCels, std::span<std::pair<uint16_t
 } // namespace
 
 #ifdef __N64__
-extern "C" const uint8_t *n64_raw_frame(uint32_t offset, uint32_t size);
-extern "C" void n64_raw_close(void);
-extern "C" void n64_cels_begin(void);
-extern "C" void n64_cels_write(uint32_t offset, const void *data, uint32_t size);
-extern "C" void n64_cels_end(void);
+extern "C" const char *n64_cel_path;
+extern "C" int n64_prepared_cel_begin(const char *celPath, uint32_t *frameCount, uint32_t *tableSize, char *err, uint32_t errLen);
+extern "C" int n64_prepared_cel_finish(void *table, uint32_t tableSize, char *err, uint32_t errLen);
 #endif
 
 void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<std::pair<uint16_t, DunFrameInfo>> frames)
 {
+#ifdef __N64__
+	{
+		// N64: el CEL ya convertido (preparado en el PC) se copia de la SD a la memoria del
+		// cartucho con el DMA del propio cartucho; en la RAM solo queda la tabla de posiciones.
+		uint32_t frameCount = 0;
+		uint32_t tableSize = 0;
+		char err[200];
+		if (!n64_prepared_cel_begin(n64_cel_path, &frameCount, &tableSize, err, sizeof(err)))
+			app_fatal(err);
+		if (frameCount != frames.size())
+			app_fatal(StrCat("El CEL preparado para la N64 no coincide con este nivel (", frameCount, " trozos, se esperaban ", frames.size(), ")"));
+		std::unique_ptr<std::byte[]> table { new std::byte[tableSize] };
+		if (!n64_prepared_cel_finish(table.get(), tableSize, err, sizeof(err)))
+			app_fatal(err);
+		dungeonCels = std::move(table);
+		LogVerbose("N64: CEL preparado cargado: {} trozos", frames.size());
+		return;
+	}
+#endif
 	const auto *srcData = reinterpret_cast<const uint8_t *>(dungeonCels.get());
 	const auto *srcOffsets = reinterpret_cast<const uint32_t *>(srcData);
 
@@ -257,23 +276,6 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 	    FormatInteger(Swap32LE(srcOffsets[0])),
 	    FormatInteger(Swap32LE(srcOffsets[Swap32LE(srcOffsets[0]) + 1])));
 
-#ifdef __N64__
-	// N64: en la RAM solo la tabla; cada trozo se escribe en la memoria del cartucho
-	// (alineado a 8 bytes) y despues se lee con una cache pequena (ver sdl_n64.c).
-	const size_t headerSize = (2 + frames.size()) * 4;
-	std::unique_ptr<std::byte[]> result { new std::byte[headerSize] };
-	auto *const resultPtr = reinterpret_cast<uint8_t *>(result.get());
-	WriteLE32(resultPtr, static_cast<uint32_t>(frames.size()));
-	uint8_t *lookup = resultPtr + 4;
-	alignas(16) uint8_t frameBuf[2048];
-	uint8_t *out = frameBuf;
-	uint32_t written = static_cast<uint32_t>((headerSize + 7) & ~size_t { 7 });
-	n64_cels_begin();
-	for (const auto &[frame, info] : frames) {
-		WriteLE32(lookup, written);
-		lookup += 4;
-		out = frameBuf;
-#else
 	const size_t outSize = GetReencodedSize(srcData, frames);
 	std::unique_ptr<std::byte[]> result { new std::byte[outSize] };
 	auto *const resultPtr = reinterpret_cast<uint8_t *>(result.get());
@@ -283,14 +285,8 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 	for (const auto &[frame, info] : frames) {
 		WriteLE32(lookup, static_cast<uint32_t>(out - resultPtr));
 		lookup += 4;
-#endif
 		const uint32_t srcFrameBegin = Swap32LE(srcOffsets[frame]);
-#ifdef __N64__
-		// N64: el CEL original esta en la memoria del cartucho; en la RAM solo su tabla
-		const uint8_t *src = n64_raw_frame(srcFrameBegin, Swap32LE(srcOffsets[frame + 1]) - srcFrameBegin);
-#else
 		const uint8_t *src = &srcData[srcFrameBegin];
-#endif
 		switch (info.type) {
 		case TileType::TransparentSquare: {
 			if (info.isFloor()) {
@@ -321,20 +317,7 @@ void ReencodeDungeonCels(std::unique_ptr<std::byte[]> &dungeonCels, std::span<st
 			ReencodeDungeonCelsRightTrapezoid(out, src);
 			break;
 		}
-#ifdef __N64__
-		const uint32_t frameSize = static_cast<uint32_t>(out - frameBuf);
-		const uint32_t padded = (frameSize + 7) & ~7u;
-		while (out < frameBuf + padded)
-			*out++ = 0;
-		n64_cels_write(written, frameBuf, padded);
-		written += padded;
-#endif
 	}
-#ifdef __N64__
-	n64_cels_end();
-	n64_raw_close();
-	const uint32_t outSize = written;
-#endif
 	WriteLE32(lookup, static_cast<uint32_t>(outSize));
 
 	const auto *dstOffsets = reinterpret_cast<const uint32_t *>(resultPtr);
