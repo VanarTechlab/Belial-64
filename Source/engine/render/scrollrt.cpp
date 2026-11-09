@@ -1838,7 +1838,16 @@ void scrollrt_draw_game_screen()
 
 #ifdef __N64__
 extern "C" void n64_lua_check(const char *where);
+extern "C" int n64_check_guards(const char *where);
 static int n64DrawChecks;
+#define N64_GUARD(name) \
+	do { \
+		if (n64DrawChecks < 3) n64_check_guards(name); \
+	} while (0)
+#else
+#define N64_GUARD(name) \
+	do { \
+	} while (0)
 #endif
 void DrawAndBlit()
 {
@@ -1889,24 +1898,35 @@ void DrawAndBlit()
 	if (drawCtrlPan) {
 		DrawMainPanel(out);
 	}
+	N64_GUARD("tras DrawMainPanel");
+
 	if (drawHealth) {
 		DrawLifeFlaskLower(out, !drawCtrlPan);
 	}
+	N64_GUARD("tras DrawLifeFlaskLower");
+
 	if (drawMana) {
 		DrawManaFlaskLower(out, !drawCtrlPan);
 
 		DrawSpell(out);
 	}
+	N64_GUARD("tras DrawSpell");
+
 	if (drawControlButtons) {
 		DrawMainPanelButtons(out);
 	}
+	N64_GUARD("tras DrawMainPanelButtons");
+
 	if (drawBelt) {
 		DrawInvBelt(out);
 	}
+	N64_GUARD("tras DrawInvBelt");
+
 	if (drawChatInput) {
 		DrawChatBox(out);
 	}
 	DrawXPBar(out);
+	N64_GUARD("tras DrawXPBar");
 	if (*GetOptions().Gameplay.showHealthValues)
 		DrawFlaskValues(out, { mainPanel.position.x + 134, mainPanel.position.y + 28 }, MyPlayer->_pHitPoints.whole(), MyPlayer->_pMaxHP.whole());
 	if (*GetOptions().Gameplay.showManaValues)
@@ -1915,6 +1935,7 @@ void DrawAndBlit()
 		    HasAnyOf(InspectPlayer->_pIFlags, ItemSpecialEffect::NoMana) ? 0 : MyPlayer->_pMaxMana.whole());
 	if (*GetOptions().Gameplay.floatingInfoBox)
 		DrawFloatingInfoBox(out);
+	N64_GUARD("tras DrawFloatingInfoBox");
 
 	if ((*GetOptions().Gameplay.showMultiplayerPartyInfo != PartyPortraits::Disabled) && PartySidePanelOpen)
 		DrawPartyMemberInfoPanel(out);
@@ -1922,6 +1943,7 @@ void DrawAndBlit()
 	DrawCursor(out);
 
 	DrawFPS(out);
+	N64_GUARD("tras DrawCursor+DrawFPS");
 
 #ifdef __N64__
 	if (n64DrawChecks < 3) {

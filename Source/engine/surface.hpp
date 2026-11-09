@@ -140,22 +140,31 @@ struct Surface {
 	 */
 	void Clip(SDL_Rect *srcRect, Point *targetPosition) const
 	{
+		// Calculado con int: en SDL1 w/h de SDL_Rect son Uint16 y un ancho negativo daba la
+		// vuelta a ~65000, y el dibujo se salia de la imagen (N64, f2v18).
+		int x = srcRect->x, y = srcRect->y, w = srcRect->w, h = srcRect->h;
 		if (targetPosition->x < 0) {
-			srcRect->x -= targetPosition->x;
-			srcRect->w += targetPosition->x;
+			x -= targetPosition->x;
+			w += targetPosition->x;
 			targetPosition->x = 0;
 		}
 		if (targetPosition->y < 0) {
-			srcRect->y -= targetPosition->y;
-			srcRect->h += targetPosition->y;
+			y -= targetPosition->y;
+			h += targetPosition->y;
 			targetPosition->y = 0;
 		}
-		if (targetPosition->x + srcRect->w > region.w) {
-			srcRect->w = region.w - targetPosition->x;
+		if (targetPosition->x + w > region.w) {
+			w = region.w - targetPosition->x;
 		}
-		if (targetPosition->y + srcRect->h > region.h) {
-			srcRect->h = region.h - targetPosition->y;
+		if (targetPosition->y + h > region.h) {
+			h = region.h - targetPosition->y;
 		}
+		if (w < 0) w = 0;
+		if (h < 0) h = 0;
+		srcRect->x = static_cast<decltype(srcRect->x)>(x);
+		srcRect->y = static_cast<decltype(srcRect->y)>(y);
+		srcRect->w = static_cast<decltype(srcRect->w)>(w);
+		srcRect->h = static_cast<decltype(srcRect->h)>(h);
 	}
 
 	/**
