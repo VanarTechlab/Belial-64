@@ -352,7 +352,16 @@ void gamemenu_save_game(bool /*bActivate*/)
 	const uint32_t currentTime = SDL_GetTicks();
 	SaveGame();
 	ClrDiabloMsg();
+#ifdef __N64__
+	// f2v54: en la N64 guardar tarda varios segundos: currentTime + 1000 - ahora salia negativo y, sin
+	// signo, enorme -> el mensaje no se iba nunca
+	{
+		const uint32_t n64Elapsed = SDL_GetTicks() - currentTime;
+		InitDiabloMsg(EMSG_GAME_SAVED, n64Elapsed < 1000 ? 1000 - n64Elapsed + 500 : 1500);
+	}
+#else
 	InitDiabloMsg(EMSG_GAME_SAVED, currentTime + 1000 - SDL_GetTicks());
+#endif
 	RedrawEverything();
 	NewCursor(CURSOR_HAND);
 	if (CornerStone.activated) {

@@ -197,6 +197,9 @@ void DrawSpellList(const Surface &out)
 	}
 }
 
+#ifdef __N64__
+extern bool N64UiMode;
+#endif
 std::vector<SpellListItem> GetSpellListItems()
 {
 	std::vector<SpellListItem> spellListItems;
@@ -207,8 +210,9 @@ std::vector<SpellListItem> GetSpellListItems()
 #ifdef __N64__
 	// f2v52: la lista va de derecha a izquierda desde x+572: a 400 de ancho quedaba fuera de la
 	// pantalla. Se centra con las columnas que quepan.
-	const int n64Cols = std::max(1, std::min(SPLROWICONLS, (gnScreenWidth - 8) / SPLICONLENGTH));
-	const int n64Left = (gnScreenWidth - n64Cols * SPLICONLENGTH) / 2;
+	const int n64W = N64UiMode ? 640 : gnScreenWidth; // f2v54: en el modo interfaz, 640
+	const int n64Cols = std::max(1, std::min(SPLROWICONLS, (n64W - 8) / SPLICONLENGTH));
+	const int n64Left = (n64W - n64Cols * SPLICONLENGTH) / 2;
 	const int rowStart = n64Left + SPLICONLENGTH * (n64Cols - 1);
 	const int rowEnd = n64Left - SPLICONLENGTH;
 #else

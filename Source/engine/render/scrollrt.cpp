@@ -104,6 +104,7 @@ extern "C" int n64_panel_occluder(int *x0, int *y0, int *x1, int *y1);
 void CalculatePanelAreas();
 int N64OccX0, N64OccY0, N64OccX1, N64OccY1;
 const uint8_t *N64OccPixels;
+SDL_Surface *n64OverlaySurfaceFwd();
 namespace {
 // Capa del panel (f2v26): 640x160, el panel ocupa las filas 32..159 y encima queda sitio
 // para la parte de arriba de los frascos. Las coordenadas son las de la pantalla (las del
@@ -113,6 +114,8 @@ constexpr int N64PanelRow = 32;
 SDL_Surface *n64PanelSurface;
 Surface N64PanelOut(const Surface &out)
 {
+	if (n64OverlaySurfaceFwd() != nullptr)
+		return Surface(n64OverlaySurfaceFwd()); // f2v54: modo interfaz: el panel va en la capa de 640x480
 	if (gnScreenWidth >= GetMainPanel().size.width)
 		return out;
 	if (n64PanelSurface == nullptr) {
@@ -159,6 +162,8 @@ extern "C" void n64_overlay_attach(uint8_t *pixels, int pitch);
 extern Rectangle UIRectangle;
 extern bool N64OverlayDrawing;
 SDL_Surface *n64OverlaySurface;
+extern bool N64UiMode;
+SDL_Surface *n64OverlaySurfaceFwd() { return N64UiMode ? n64OverlaySurface : nullptr; }
 void N64FreeOverlay()
 {
 	if (n64OverlaySurface != nullptr) {
@@ -167,33 +172,56 @@ void N64FreeOverlay()
 		n64OverlaySurface = nullptr;
 	}
 }
-bool N64DrawOverlay(bool store, bool qtext)
+// f2v54: "modo interfaz de 640x480". Con el inventario, el personaje, los hechizos, las misiones,
+// las tiendas, el texto de las misiones o el menu de START abiertos, toda la interfaz (paneles, panel
+// de abajo, cursor) se dibuja en la capa de 640x480 con las coordenadas de 640x480, como en el PC, y
+// el RDP la pone encima del mundo (que sigue a 400x300). Asi caben enteros.
+bool N64UiMode = false;
+void N64RecalcUIRectangle();
+bool N64WantUiMode()
 {
-	if (!store && !qtext) {
-		N64FreeOverlay();
-		return true;
-	}
-	if (gnScreenWidth >= 640)
-		return false; // a 640x480 se dibuja como siempre
-	if (n64OverlaySurface == nullptr) {
+	return invflag || CharFlag || SpellbookFlag || QuestLogIsOpen || SpellSelectFlag || IsStashOpen || IsVisualStoreOpen
+	    || IsPlayerInStore() || qtextflag || gmenu_is_active();
+}
+void N64UpdateUiMode()
+{
+	const bool want = gnScreenWidth < 640 && N64WantUiMode();
+	if (want && n64OverlaySurface == nullptr) {
 		N64FreeFloorSave(); // deja sitio
 		n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
-		if (n64OverlaySurface == nullptr)
-			return false;
 	}
-	memset(n64OverlaySurface->pixels, 0, static_cast<size_t>(n64OverlaySurface->pitch) * 480);
-	const Surface ovl(n64OverlaySurface);
-	const Rectangle saved = UIRectangle;
-	UIRectangle = { { 0, 0 }, { 640, 480 } };
-	N64OverlayDrawing = true;
-	if (store && !qtext)
-		DrawSText(ovl);
-	if (qtext)
-		DrawQText(ovl);
-	N64OverlayDrawing = false;
-	UIRectangle = saved;
-	n64_overlay_attach(static_cast<uint8_t *>(n64OverlaySurface->pixels), n64OverlaySurface->pitch);
-	return true;
+	const bool on = want && n64OverlaySurface != nullptr;
+	if (on != N64UiMode) {
+		const Rectangle oldMain = GetMainPanel();
+		const Rectangle oldLeft = GetLeftPanel();
+		const Rectangle oldRight = GetRightPanel();
+		N64UiMode = on;
+		CalculatePanelAreas();
+		N64RecalcUIRectangle();
+		// el cursor (lo coloca el mando en una casilla) pasa a las coordenadas nuevas
+		auto remap = [](const Rectangle &oldR, const Rectangle &newR) {
+			if (oldR.contains(MousePosition)) {
+				MousePosition += newR.position - oldR.position;
+				return true;
+			}
+			return false;
+		};
+		if (!remap(oldRight, GetRightPanel()) && !remap(oldLeft, GetLeftPanel()))
+			remap(oldMain, GetMainPanel());
+		GetDrawnCursor().rect.size = { 0, 0 }; // lo guardado detras del cursor era de la otra imagen
+		RedrawEverything();
+	}
+	if (!want)
+		N64FreeOverlay();
+	if (N64UiMode)
+		n64_overlay_attach(static_cast<uint8_t *>(n64OverlaySurface->pixels), n64OverlaySurface->pitch);
+	n64_panel_visible(N64UiMode ? 0 : 1);
+}
+Surface N64UiOut(const Surface &out)
+{
+	if (N64UiMode && n64OverlaySurface != nullptr)
+		return Surface(n64OverlaySurface);
+	return out;
 }
 void N64FreePanelLayer()
 {
@@ -1603,55 +1631,54 @@ void DrawView(const Surface &out, Point startPosition)
 	DrawFloatingNumbers(out, startPosition, offset);
 
 #ifdef __N64__
-	const bool n64OverlayDone = N64DrawOverlay(IsPlayerInStore(), qtextflag);
-	if (!n64OverlayDone && IsPlayerInStore() && !qtextflag)
-		DrawSText(out);
+	// f2v54: en modo interfaz todo esto va a la capa de 640x480 (se borra en cada fotograma)
+	if (N64UiMode && n64OverlaySurface != nullptr)
+		memset(n64OverlaySurface->pixels, 0, static_cast<size_t>(n64OverlaySurface->pitch) * 480);
+	const Surface uiOut = N64UiOut(out);
+	N64OverlayDrawing = uiOut.surface != out.surface; // fondos semitransparentes como trama
 #else
-	if (IsPlayerInStore() && !qtextflag)
-		DrawSText(out);
+	const Surface &uiOut = out;
 #endif
+	if (IsPlayerInStore() && !qtextflag)
+		DrawSText(uiOut);
 	if (invflag) {
-		DrawInv(out);
+		DrawInv(uiOut);
 	} else if (SpellbookFlag) {
-		DrawSpellBook(out);
+		DrawSpellBook(uiOut);
 	}
 
-	DrawDurIcon(out);
+	DrawDurIcon(uiOut);
 
-	DrawLevelButton(out);
+	DrawLevelButton(uiOut);
 
 	if (CharFlag) {
-		DrawChr(out);
+		DrawChr(uiOut);
 	} else if (QuestLogIsOpen) {
-		DrawQuestLog(out);
+		DrawQuestLog(uiOut);
 	} else if (IsStashOpen) {
-		DrawStash(out);
+		DrawStash(uiOut);
 	} else if (IsVisualStoreOpen) {
-		DrawVisualStore(out);
+		DrawVisualStore(uiOut);
 	}
 
 	if (ShowUniqueItemInfoBox) {
-		DrawUniqueInfo(out);
+		DrawUniqueInfo(uiOut);
 	}
-#ifdef __N64__
-	if (qtextflag && !n64OverlayDone) {
-#else
 	if (qtextflag) {
-#endif
-		DrawQText(out);
+		DrawQText(uiOut);
 	}
 	if (SpellSelectFlag) {
-		DrawSpellList(out);
+		DrawSpellList(uiOut);
 	}
 	if (DropGoldFlag) {
-		DrawGoldSplit(out);
+		DrawGoldSplit(uiOut);
 	}
-	DrawGoldWithdraw(out);
+	DrawGoldWithdraw(uiOut);
 	if (HelpFlag) {
-		DrawHelp(out);
+		DrawHelp(uiOut);
 	}
 	if (ChatLogFlag) {
-		DrawChatLog(out);
+		DrawChatLog(uiOut);
 	}
 	if (MyPlayerIsDead) {
 		RedBack(out);
@@ -1660,24 +1687,27 @@ void DrawView(const Surface &out, Point startPosition)
 		gmenu_draw_pause(out);
 	}
 	if (IsDiabloMsgAvailable()) {
-		DrawDiabloMsg(out.subregionY(0, out.h() - GetMainPanel().size.height));
+		DrawDiabloMsg(uiOut.subregionY(0, uiOut.h() - GetMainPanel().size.height));
 	}
 
-	DrawControllerModifierHints(out);
-	DrawPlrMsg(out);
-	gmenu_draw(out);
-	doom_draw(out);
+	DrawControllerModifierHints(uiOut);
+	DrawPlrMsg(uiOut);
+	gmenu_draw(uiOut);
+	doom_draw(uiOut);
 #ifdef __N64__
 	{
 		const Surface panelOut = N64PanelOut(out);
-		if (panelOut.surface != out.surface && n64PanelSurface != nullptr) {
+		if (panelOut.surface != out.surface && panelOut.surface != n64OverlaySurface && n64PanelSurface != nullptr) {
 			// encima del panel: transparente (indice 0) salvo lo que dibujen los frascos
 			memset(n64PanelSurface->pixels, 0, static_cast<size_t>(n64PanelSurface->pitch) * N64PanelRow);
 		}
-		DrawInfoBox(panelOut);
-		UpdateLifeManaPercent(); // Update life/mana totals before rendering any portion of the flask.
-		DrawLifeFlaskUpper(panelOut);
-		DrawManaFlaskUpper(panelOut);
+		if (!(N64UiMode && gmenu_is_active())) {
+			DrawInfoBox(panelOut);
+			UpdateLifeManaPercent(); // Update life/mana totals before rendering any portion of the flask.
+			DrawLifeFlaskUpper(panelOut);
+			DrawManaFlaskUpper(panelOut);
+		}
+		N64OverlayDrawing = false;
 	}
 #else
 	DrawInfoBox(out);
@@ -2100,6 +2130,9 @@ void DrawAndBlit()
 	N64BlitTimer n64BlitTimer;
 	if (n64DrawChecks < 3)
 		n64_lua_check("inicio de DrawAndBlit");
+	N64UpdateUiMode();
+	if (N64UiMode)
+		RedrawEverything(); // la capa se borra en cada fotograma: el panel se vuelve a dibujar entero
 #endif
 
 	int hgt = 0;
@@ -2128,7 +2161,16 @@ void DrawAndBlit()
 	}
 
 	const Surface &out = GlobalBackBuffer();
+#ifdef __N64__
+	if (!N64UiMode)
+		UndrawCursor(out);
+	if (N64UiMode && gmenu_is_active()) {
+		// f2v53/54: con el menu de START no se ve el panel
+		drawHealth = drawMana = drawControlButtons = drawBelt = drawInfoBox = drawCtrlPan = false;
+	}
+#else
 	UndrawCursor(out);
+#endif
 #ifdef __N64__
 	{
 		// L+R+C arriba/abajo cambia el tamano del panel: recalcular el hueco del mundo
@@ -2140,7 +2182,6 @@ void DrawAndBlit()
 		}
 	}
 	const Surface panelOut = N64PanelOut(out);
-	n64_panel_visible(gmenu_is_active() ? 0 : 1); // f2v53: sin panel con el menu de START abierto
 	n64_panel_frame();
 	if (panelOut.surface != out.surface && n64_panel_occluder(&N64OccX0, &N64OccY0, &N64OccX1, &N64OccY1))
 		N64OccPixels = out.begin();
@@ -2202,14 +2243,23 @@ void DrawAndBlit()
 		DrawFlaskValues(panelOut, { mainPanel.position.x + mainPanel.size.width - 138, mainPanel.position.y + 28 },
 		    (HasAnyOf(InspectPlayer->_pIFlags, ItemSpecialEffect::NoMana) || MyPlayer->hasNoMana()) ? 0 : MyPlayer->_pMana.whole(),
 		    HasAnyOf(InspectPlayer->_pIFlags, ItemSpecialEffect::NoMana) ? 0 : MyPlayer->_pMaxMana.whole());
+#ifdef __N64__
+	if (*GetOptions().Gameplay.floatingInfoBox)
+		DrawFloatingInfoBox(N64UiOut(out));
+#else
 	if (*GetOptions().Gameplay.floatingInfoBox)
 		DrawFloatingInfoBox(out);
+#endif
 	N64_GUARD("tras DrawFloatingInfoBox");
 
 	if ((*GetOptions().Gameplay.showMultiplayerPartyInfo != PartyPortraits::Disabled) && PartySidePanelOpen)
 		DrawPartyMemberInfoPanel(out);
 
+#ifdef __N64__
+	DrawCursor(N64UiOut(out));
+#else
 	DrawCursor(out);
+#endif
 
 	DrawFPS(out);
 	N64_GUARD("tras DrawCursor+DrawFPS");

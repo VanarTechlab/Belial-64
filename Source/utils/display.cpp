@@ -65,6 +65,10 @@
 
 namespace devilution {
 
+#ifdef __N64__
+extern bool N64UiMode; // f2v54 (scrollrt.cpp)
+#endif
+
 extern SDLSurfaceUniquePtr RendererTextureSurface; /** defined in dx.cpp */
 SDL_Window *ghMainWnd;
 
@@ -144,6 +148,12 @@ void CalculatePreferredWindowSize(int &width, int &height)
 void CalculateUIRectangle()
 {
 	constexpr Size UISize { 640, 480 };
+#ifdef __N64__
+	if (N64UiMode) { // f2v54: la interfaz se dibuja en la capa de 640x480
+		UIRectangle = { { 0, 0 }, UISize };
+		return;
+	}
+#endif
 	UIRectangle = {
 		{ (gnScreenWidth - UISize.width) / 2, (gnScreenHeight - UISize.height) / 2 },
 		UISize
@@ -1031,5 +1041,12 @@ SDLSurfaceUniquePtr ScaleSurfaceToOutput(SDLSurfaceUniquePtr surface)
 #endif
 	return surface;
 }
+
+#ifdef __N64__
+void N64RecalcUIRectangle()
+{
+	CalculateUIRectangle();
+}
+#endif
 
 } // namespace devilution

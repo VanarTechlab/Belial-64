@@ -238,18 +238,28 @@ bool IsLevelUpButtonVisible()
 
 } // namespace
 
+#ifdef __N64__
+extern bool N64UiMode; // f2v54 (scrollrt.cpp): interfaz en la capa de 640x480
+#endif
 void CalculatePanelAreas()
 {
+#ifdef __N64__
+	const int uiW = N64UiMode ? 640 : gnScreenWidth;
+	const int uiH = N64UiMode ? 480 : gnScreenHeight;
+#else
+	const int uiW = gnScreenWidth;
+	const int uiH = gnScreenHeight;
+#endif
 	constexpr Size MainPanelSize { 640, 128 };
 
 	MainPanel = {
-		{ (gnScreenWidth - MainPanelSize.width) / 2, gnScreenHeight - MainPanelSize.height },
+		{ (uiW - MainPanelSize.width) / 2, uiH - MainPanelSize.height },
 		MainPanelSize
 	};
 #ifdef __N64__
 	// N64 (f2v26/f2v28): el panel se dibuja entero en una capa aparte (scrollrt.cpp, N64PanelOut)
 	// que el RDP pone reducida abajo, tan ancha como quepa sin estirarla.
-	if (gnScreenWidth < MainPanelSize.width)
+	if (uiW < MainPanelSize.width)
 		MainPanel.position.x = 0;
 #endif
 	LeftPanel = {
@@ -262,18 +272,18 @@ void CalculatePanelAreas()
 	};
 
 	if (ControlMode == ControlTypes::VirtualGamepad) {
-		LeftPanel.position.x = gnScreenWidth / 2 - LeftPanel.size.width;
+		LeftPanel.position.x = uiW / 2 - LeftPanel.size.width;
 	} else {
-		if (gnScreenWidth - LeftPanel.size.width - RightPanel.size.width > MainPanel.size.width) {
-			LeftPanel.position.x = (gnScreenWidth - LeftPanel.size.width - RightPanel.size.width - MainPanel.size.width) / 2;
+		if (uiW - LeftPanel.size.width - RightPanel.size.width > MainPanel.size.width) {
+			LeftPanel.position.x = (uiW - LeftPanel.size.width - RightPanel.size.width - MainPanel.size.width) / 2;
 		}
 	}
-	LeftPanel.position.y = (gnScreenHeight - LeftPanel.size.height - MainPanel.size.height) / 2;
+	LeftPanel.position.y = (uiH - LeftPanel.size.height - MainPanel.size.height) / 2;
 
 	if (ControlMode == ControlTypes::VirtualGamepad) {
-		RightPanel.position.x = gnScreenWidth / 2;
+		RightPanel.position.x = uiW / 2;
 	} else {
-		RightPanel.position.x = gnScreenWidth - RightPanel.size.width - LeftPanel.position.x;
+		RightPanel.position.x = uiW - RightPanel.size.width - LeftPanel.position.x;
 	}
 	RightPanel.position.y = LeftPanel.position.y;
 

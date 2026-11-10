@@ -58,11 +58,15 @@ constexpr int SliderFillMin = SliderMarkerWidth / 2;
 constexpr int SliderFillMax = SliderValueWidth - (SliderMarkerWidth / 2) - 1;
 
 #ifdef __N64__
-// N64 (f2v30): menu de la partida con letra de 30 (a 400x300 la de 46 no cabia)
+// N64 (f2v30): menu de la partida con letra de 30 (a 400x300 la de 46 no cabia).
+// f2v54: en el modo interfaz de 640x480 (capa aparte) se usa el tamano del PC.
+} // namespace
+extern bool N64UiMode;
+namespace {
 constexpr int GMenuTop = 117;
-constexpr int GMenuItemHeight = 34;
-#define N64_GMENU_FONT GameFont30
-#define N64_GMENU_FLAG UiFlags::FontSize30
+#define GMenuItemHeight (N64UiMode ? 45 : 34)
+#define N64_GMENU_FONT (N64UiMode ? GameFont46 : GameFont30)
+#define N64_GMENU_FLAG (N64UiMode ? UiFlags::FontSize46 : UiFlags::FontSize30)
 #else
 constexpr int GMenuTop = 117;
 constexpr int GMenuItemHeight = 45;
@@ -150,15 +154,20 @@ void GmenuDrawMenuItem(const Surface &out, TMenuItem *pItem, int y)
 		ClxDraw(out, { SliderValueLeft + pos - (SliderMarkerWidth / 2) + uiPositionX, y + SliderValuePaddingTop + SliderValueHeight - 1 }, (*option_cel)[0]);
 	}
 
+#ifdef __N64__
+	const int x = GetUIRectangle().position.x + (GetUIRectangle().size.width - w) / 2;
+#else
 	const int x = (gnScreenWidth - w) / 2;
+#endif
 	const UiFlags style = pItem->enabled() ? UiFlags::ColorGold : UiFlags::ColorBlack;
 	DrawString(out, _(pItem->pszStr), Point { x, y },
 	    { .flags = style | N64_GMENU_FLAG, .spacing = 2 });
 	if (pItem == sgpCurrItem) {
 		const ClxSprite sprite = (*PentSpin_cel)[PentSpn2Spin()];
 #ifdef __N64__
-		ClxDraw(out, { x - 52, y + 42 }, sprite);
-		ClxDraw(out, { x + 4 + w, y + 42 }, sprite);
+		const int n64PentY = N64UiMode ? 51 : 42;
+		ClxDraw(out, { x - (N64UiMode ? 54 : 52), y + n64PentY }, sprite);
+		ClxDraw(out, { x + 4 + w, y + n64PentY }, sprite);
 #else
 		ClxDraw(out, { x - 54, y + 51 }, sprite);
 		ClxDraw(out, { x + 4 + w, y + 51 }, sprite);
@@ -282,9 +291,10 @@ void gmenu_draw(const Surface &out)
 #ifdef __N64__
 		// f2v53: el panel se oculta con el menu abierto; el logo arriba del todo y el menu debajo
 		// (a 400x300 el logo quedaba por encima de la pantalla)
-		const int n64LogoBottom = gnScreenHeight >= 480 ? 102 + uiPositionY : sprite.height() + 4;
-		ClxDraw(out, { (gnScreenWidth - sprite.width()) / 2, n64LogoBottom }, sprite);
-		int y = gnScreenHeight >= 480 ? 110 + uiPositionY : n64LogoBottom + 8;
+		const bool n64Full = uiPositionY >= 0; // a 640x480 (o en la capa de 640x480): como en el PC
+		const int n64LogoBottom = n64Full ? 102 + uiPositionY : sprite.height() + 4;
+		ClxDraw(out, { (GetUIRectangle().size.width - sprite.width()) / 2 + GetUIRectangle().position.x, n64LogoBottom }, sprite);
+		int y = n64Full ? 110 + uiPositionY : n64LogoBottom + 8;
 #else
 		ClxDraw(out, { (gnScreenWidth - sprite.width()) / 2, 102 + uiPositionY }, sprite);
 		int y = 110 + uiPositionY;
