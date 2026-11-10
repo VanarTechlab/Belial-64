@@ -877,6 +877,25 @@ void N64UseLoadingResolution(bool loading)
 	forceResolution = loading ? Size { 640, 480 } : Size { 0, 0 };
 	ResizeWindow();
 }
+extern "C" void n64_cel_cache_release(void);
+void N64FreePanelLayer();
+void CalcViewportGeometry();
+void RedrawEverything();
+void CalculatePanelAreas();
+void N64UseOverlayResolution(bool overlay)
+{
+	static bool n64Overlay = false;
+	if (overlay == n64Overlay || !N64InGame)
+		return;
+	n64Overlay = overlay;
+	N64FreePanelLayer();
+	n64_cel_cache_release();
+	forceResolution = overlay ? Size { 640, 480 } : Size { 0, 0 };
+	ResizeWindow();
+	CalcViewportGeometry();
+	CalculatePanelAreas();
+	RedrawEverything();
+}
 void N64UseGameResolution(bool inGame)
 {
 	N64InGame = inGame;

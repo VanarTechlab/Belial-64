@@ -38,6 +38,7 @@ extern DVL_API_FOR_TEST Size forceResolution;
 #ifdef __N64__
 void N64UseGameResolution(bool inGame);
 void N64UseLoadingResolution(bool loading);
+void N64UseOverlayResolution(bool overlay);
 #endif
 
 #ifdef USE_SDL1
