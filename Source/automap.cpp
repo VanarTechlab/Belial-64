@@ -1790,7 +1790,12 @@ void DrawAutomap(const Surface &out)
 
 	if (GetAutomapType() == AutomapType::Minimap) {
 		// Background fill
+#ifdef __N64__
+		// f2v56: fondo negro opaco (la imagen del minimapa se guarda y se reutiliza)
+		FillRect(out, MinimapRect.position.x, MinimapRect.position.y, MinimapRect.size.width, MinimapRect.size.height, 0);
+#else
 		DrawHalfTransparentRectTo(out, MinimapRect.position.x, MinimapRect.position.y, MinimapRect.size.width, MinimapRect.size.height);
+#endif
 
 		const uint8_t frameShadowColor = PAL16_YELLOW + 12;
 

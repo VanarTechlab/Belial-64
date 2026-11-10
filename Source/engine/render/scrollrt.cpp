@@ -163,6 +163,9 @@ extern Rectangle UIRectangle;
 extern bool N64OverlayDrawing;
 SDL_Surface *n64OverlaySurface;
 extern bool N64UiMode;
+extern "C" void n64_infotext_attach(uint8_t *px, int pitch, int w, int h);
+extern "C" void n64_infotext_show(int show);
+extern const Surface *N64InfoTextOut;
 SDL_Surface *n64OverlaySurfaceFwd() { return N64UiMode ? n64OverlaySurface : nullptr; }
 void N64FreeOverlay()
 {
@@ -1582,13 +1585,40 @@ void N64DrawMinimap(const Surface &out)
 	} else {
 		rect = Rectangle { { margin, margin / 2 + 2 }, Size { 112, 56 } };
 	}
-	const Rectangle savedRect = MinimapRect;
-	const AutomapType savedType = GetAutomapType();
-	MinimapRect = rect;
-	SetAutomapType(AutomapType::Minimap);
-	DrawAutomap(out.subregionY(0, gnViewportHeight));
-	SetAutomapType(savedType);
-	MinimapRect = savedRect;
+	// f2v56: dibujarlo costaba ~10 ms por cuadro (MEDIDO en f2v55): se guarda la imagen y solo se
+	// vuelve a dibujar al cambiar de casilla, de recuadro o cada 45 cuadros
+	static uint8_t cache[(128 + 4) * (64 + 4)];
+	static uint32_t cacheKey = 0;
+	static int cacheAge = 1000;
+	const int cx = rect.position.x - 2;
+	const int cy = rect.position.y - 2;
+	const int cw = rect.size.width + 4;
+	const int ch = rect.size.height + 4;
+	if (cx < 0 || cy < 0 || cx + cw > out.w() || cy + ch > out.h() || cw * ch > static_cast<int>(sizeof(cache)))
+		return;
+	uint32_t key = 2166136261U;
+	auto mix = [&key](uint32_t v) { key = (key ^ v) * 16777619U; };
+	mix(static_cast<uint32_t>(ViewPosition.x) | (static_cast<uint32_t>(ViewPosition.y) << 16));
+	mix(static_cast<uint32_t>(cx) | (static_cast<uint32_t>(cy) << 10) | (static_cast<uint32_t>(cw) << 20));
+	mix(static_cast<uint32_t>(AutomapOffset.deltaX & 0xFFFF) | (static_cast<uint32_t>(AutomapOffset.deltaY & 0xFFFF) << 16));
+	mix(static_cast<uint32_t>(currlevel) | (static_cast<uint32_t>(leveltype) << 8) | (static_cast<uint32_t>(setlevel) << 16) | (static_cast<uint32_t>(MinimapScale) << 20));
+	if (key != cacheKey || ++cacheAge > 45) {
+		const Rectangle savedRect = MinimapRect;
+		const AutomapType savedType = GetAutomapType();
+		MinimapRect = rect;
+		SetAutomapType(AutomapType::Minimap);
+		DrawAutomap(out.subregionY(0, gnViewportHeight));
+		SetAutomapType(savedType);
+		MinimapRect = savedRect;
+		for (int y = 0; y < ch; y++)
+			memcpy(&cache[static_cast<size_t>(y) * cw], out.at(cx, cy + y), static_cast<size_t>(cw));
+		cacheKey = key;
+		cacheAge = 0;
+		n64_prof_add(31, 1);
+	} else {
+		for (int y = 0; y < ch; y++)
+			memcpy(out.at(cx, cy + y), &cache[static_cast<size_t>(y) * cw], static_cast<size_t>(cw));
+	}
 }
 #endif
 
@@ -1757,7 +1787,23 @@ void DrawView(const Surface &out, Point startPosition)
 			memset(n64PanelSurface->pixels, 0, static_cast<size_t>(n64PanelSurface->pitch) * N64PanelRow);
 		}
 		if (!(N64UiMode && gmenu_is_active())) {
+			// f2v56: texto del cuadro en su capa (a tamano del juego) salvo en el modo interfaz
+			static SDL_Surface *n64InfoSurf = nullptr;
+			static Surface n64InfoOut;
+			n64_infotext_show(0);
+			if (!N64UiMode && panelOut.surface != out.surface) {
+				if (n64InfoSurf == nullptr) {
+					n64InfoSurf = SDL_CreateRGBSurface(0, 160, 36, 8, 0, 0, 0, 0);
+					if (n64InfoSurf != nullptr)
+						n64_infotext_attach(static_cast<uint8_t *>(n64InfoSurf->pixels), n64InfoSurf->pitch, 160, 36);
+				}
+				if (n64InfoSurf != nullptr) {
+					n64InfoOut = Surface(n64InfoSurf);
+					N64InfoTextOut = &n64InfoOut;
+				}
+			}
 			DrawInfoBox(panelOut);
+			N64InfoTextOut = nullptr;
 			UpdateLifeManaPercent(); // Update life/mana totals before rendering any portion of the flask.
 			DrawLifeFlaskUpper(panelOut);
 			DrawManaFlaskUpper(panelOut);

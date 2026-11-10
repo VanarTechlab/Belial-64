@@ -36,8 +36,21 @@ constexpr int BackHeight = 9;
 
 OptionalOwnedClxSpriteList xpbarArt;
 
+#ifdef __N64__
+// f2v56: siempre activa en N64 y mas gruesa (el panel se ve reducido a ~0,4)
+bool XPBarOn() { return true; }
+#else
+bool XPBarOn() { return *GetOptions().Gameplay.experienceBar; }
+#endif
+
 void DrawBar(const Surface &out, Point screenPosition, int width, const ColorGradient &gradient)
 {
+#ifdef __N64__
+	static constexpr int rows[] = { 5, 8, 11, 11, 8, 5 };
+	for (int r = 0; r < 6; r++)
+		UnsafeDrawHorizontalLine(out, screenPosition + Displacement { 0, r }, width, gradient[rows[r]]);
+	return;
+#endif
 	UnsafeDrawHorizontalLine(out, screenPosition + Displacement { 0, 1 }, width, gradient[(gradient.size() * 3 / 4) - 1]);
 	UnsafeDrawHorizontalLine(out, screenPosition + Displacement { 0, 2 }, width, gradient[gradient.size() - 1]);
 	UnsafeDrawHorizontalLine(out, screenPosition + Displacement { 0, 3 }, width, gradient[(gradient.size() / 2) - 1]);
@@ -45,6 +58,11 @@ void DrawBar(const Surface &out, Point screenPosition, int width, const ColorGra
 
 void DrawEndCap(const Surface &out, Point point, int idx, const ColorGradient &gradient)
 {
+#ifdef __N64__
+	for (int r = 0; r < 6; r++)
+		out.SetPixel({ point.x, point.y + r }, gradient[idx * (6 - r / 2) / 6]);
+	return;
+#endif
 	out.SetPixel({ point.x, point.y + 1 }, gradient[idx * 3 / 4]);
 	out.SetPixel({ point.x, point.y + 2 }, gradient[idx]);
 	out.SetPixel({ point.x, point.y + 3 }, gradient[idx / 2]);
@@ -66,8 +84,12 @@ const auto OptionChangeHandler = (GetOptions().Gameplay.experienceBar.SetValueCh
 
 void InitXPBar()
 {
-	if (*GetOptions().Gameplay.experienceBar) {
+	if (XPBarOn()) {
+#ifdef __N64__
+		xpbarArt = LoadOptionalClx("data\\xpbar.clx"); // si falta en la SD, sin barra (no se cierra)
+#else
 		xpbarArt = LoadClx("data\\xpbar.clx");
+#endif
 	}
 }
 
@@ -78,14 +100,18 @@ void FreeXPBar()
 
 void DrawXPBar(const Surface &out)
 {
-	if (!*GetOptions().Gameplay.experienceBar || ChatFlag)
+	if (!XPBarOn() || ChatFlag || !xpbarArt)
 		return;
 
 	const Player &player = *MyPlayer;
 	const Rectangle &mainPanel = GetMainPanel();
 
 	const Point back = { mainPanel.position.x + (mainPanel.size.width / 2) - 155, mainPanel.position.y + mainPanel.size.height - 11 };
+#ifdef __N64__
+	const Point position = back + Displacement { 3, 1 };
+#else
 	const Point position = back + Displacement { 3, 2 };
+#endif
 
 	RenderClxSprite(out, (*xpbarArt)[0], back);
 
@@ -121,7 +147,7 @@ void DrawXPBar(const Surface &out)
 
 bool CheckXPBarInfo()
 {
-	if (!*GetOptions().Gameplay.experienceBar)
+	if (!XPBarOn())
 		return false;
 	const Rectangle &mainPanel = GetMainPanel();
 

@@ -22,6 +22,12 @@ namespace devilution {
 
 StringOrView InfoString;
 StringOrView FloatingInfoString;
+#ifdef __N64__
+// f2v56: si no es nulo, el texto del cuadro del panel se dibuja aqui (capa propia a tamano del juego)
+const Surface *N64InfoTextOut = nullptr;
+extern "C" void n64_infotext_show(int show);
+extern "C" int n64_overlay_black(void);
+#endif
 
 namespace {
 
@@ -39,6 +45,23 @@ void PrintInfo(const Surface &out)
 	const int spaceIndex = std::min(4, newLineCount);
 	const int spacing = space[spaceIndex];
 	const int lineHeight = 12 + spacing;
+#ifdef __N64__
+	if (N64InfoTextOut != nullptr) {
+		const Surface &t = *N64InfoTextOut;
+		const int lines = newLineCount + 1;
+		const int lh = std::max(8, std::min(12, t.h() / lines));
+		FillRect(t, 0, 0, t.w(), t.h(), static_cast<uint8_t>(n64_overlay_black()));
+		DrawString(t, InfoString, Rectangle { { 2, 0 }, { t.w() - 4, t.h() } },
+		    {
+		        .flags = InfoColor | UiFlags::AlignCenter | UiFlags::VerticalCenter | UiFlags::KerningFitSpacing,
+		        .spacing = 1,
+		        .lineHeight = lh,
+		    });
+		n64_infotext_show(1);
+		SpeakText(InfoString);
+		return;
+	}
+#endif
 
 	// Adjusting the line height to add spacing between lines
 	// will also add additional space beneath the last line
