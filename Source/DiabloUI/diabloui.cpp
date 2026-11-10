@@ -42,6 +42,7 @@
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
 #include "engine/render/primitive_render.hpp"
+#include "movie.h"
 #include "engine/render/text_render.hpp"
 #include "engine/sound.h"
 #include "engine/surface.hpp"
@@ -313,6 +314,71 @@ void N64VirtualKeyboard(std::string_view hint, char *buf, int maxlen)
 #endif
 
 } // namespace
+
+#ifdef __N64__
+extern "C" int n64_cine_seen(const char *name);
+// f2v70: menu Cinematicas: lista las ya vistas (saves/n64_cine.txt) y las vuelve a poner.
+// Cruceta arriba/abajo, A reproduce, B o START vuelven.
+void N64CinematicsMenu()
+{
+	struct Cine {
+		const char *file;
+		const char *label;
+	};
+	static const Cine All[] = {
+		{ "logo", N_("Blizzard Logo") },
+		{ "diablo1", N_("Introduction") },
+		{ "diabvic2", N_("Victory (Warrior)") },
+		{ "diabvic3", N_("Victory (Rogue)") },
+		{ "diabvic1", N_("Victory (Sorcerer)") },
+		{ "diabend", N_("Ending") },
+		{ "loopdend", N_("Credits") },
+	};
+	std::vector<const Cine *> seen;
+	for (const Cine &c : All) {
+		if (n64_cine_seen(c.file) != 0)
+			seen.push_back(&c);
+	}
+	const int count = static_cast<int>(seen.size());
+	int sel = 0;
+	bool done = false;
+	while (!done) {
+		const Surface out(DiabloUiSurface());
+		FillRect(out, 0, 0, out.w(), out.h(), 0);
+		DrawString(out, _("Cinematics"), Rectangle { { 0, 40 }, { out.w(), 50 } }, { .flags = UiFlags::FontSize42 | UiFlags::ColorUiGold | UiFlags::AlignCenter });
+		if (count == 0) {
+			DrawString(out, _("No cinematics seen yet"), Rectangle { { 0, 200 }, { out.w(), 40 } }, { .flags = UiFlags::FontSize30 | UiFlags::ColorUiSilver | UiFlags::AlignCenter });
+		}
+		for (int i = 0; i < count; i++) {
+			DrawString(out, _(seen[i]->label), Rectangle { { 0, 120 + i * 44 }, { out.w(), 40 } },
+			    { .flags = UiFlags::FontSize30 | (i == sel ? UiFlags::ColorWhite : UiFlags::ColorUiGold) | UiFlags::AlignCenter });
+		}
+		DrawString(out, _("Back"), Rectangle { { 0, 430 }, { out.w(), 30 } }, { .flags = UiFlags::FontSize24 | (sel == count ? UiFlags::ColorWhite : UiFlags::ColorUiSilver) | UiFlags::AlignCenter });
+		RenderPresent();
+		SDL_Event event;
+		while (SDL_PollEvent(&event)) {
+			if (event.type != SDL_EVENT_KEY_DOWN)
+				continue;
+			switch (SDLC_EventKey(event)) {
+			case SDLK_UP: sel = (sel + count) % (count + 1); break;
+			case SDLK_DOWN: sel = (sel + 1) % (count + 1); break;
+			case SDLK_LALT: // B
+			case SDLK_RETURN: // START
+				done = true;
+				break;
+			case SDLK_LCTRL: // A
+				if (sel == count) {
+					done = true;
+				} else {
+					play_movie(StrCat("gendata\\", seen[sel]->file, ".smk").c_str(), true);
+				}
+				break;
+			default: break;
+			}
+		}
+	}
+}
+#endif
 
 bool IsTextInputActive()
 {

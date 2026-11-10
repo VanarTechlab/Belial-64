@@ -30,6 +30,9 @@ namespace devilution {
 
 uint32_t gSaveNumber;
 
+#ifdef __N64__
+void N64CinematicsMenu(); // diabloui.cpp
+#endif
 namespace {
 
 _music_id NextTrack()
@@ -200,6 +203,12 @@ void mainmenu_loop()
 		case MAINMENU_SETTINGS:
 			UiSettingsMenu();
 			break;
+#ifdef __N64__
+		case MAINMENU_N64_CINEMATICS:
+			N64CinematicsMenu();
+			RefreshMusic();
+			break;
+#endif
 		}
 	} while (!done);
 

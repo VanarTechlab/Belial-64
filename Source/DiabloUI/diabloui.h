@@ -41,6 +41,7 @@ enum _mainmenu_selections : uint8_t {
 	MAINMENU_SHOW_CREDITS,
 	MAINMENU_EXIT_DIABLO,
 	MAINMENU_ATTRACT_MODE,
+	MAINMENU_N64_CINEMATICS, // f2v70: menu de cinematicas vistas
 };
 
 enum _selhero_selections : uint8_t {

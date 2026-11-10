@@ -1269,7 +1269,11 @@ void DiabloInitScreen()
 
 void SetApplicationVersions()
 {
+#ifdef __N64__
+	*BufCopy(gszProductName, "Belial 64 - DevilutionX v", PROJECT_VERSION) = '\0'; // f2v70: nombre del port
+#else
 	*BufCopy(gszProductName, PROJECT_NAME, " v", PROJECT_VERSION) = '\0';
+#endif
 	*BufCopy(gszVersionNumber, "version ", PROJECT_VERSION) = '\0';
 }
 
