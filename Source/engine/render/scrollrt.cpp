@@ -1342,6 +1342,16 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
 	position += tileShift;
 
 	// Skip rendering parts covered by the panels
+#ifdef __N64__
+	if (N64UiMode && CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+		// f2v55: el panel (320 de 640) tapa la mitad del mundo (gnScreenWidth / 2, no 320):
+		// el jugador se corre un cuarto del ancho (64 de la casilla + el resto)
+		position += Direction::East;
+		offset.deltaX -= gnScreenWidth / 4 - TILE_WIDTH;
+		if (IsLeftPanelOpen())
+			offset.deltaX += gnScreenWidth / 2;
+	} else
+#endif
 	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
 		const int multiplier = (*GetOptions().Graphics.zoom) ? 1 : 2;
 		position += Displacement(Direction::East) * multiplier;
@@ -1394,7 +1404,12 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 
 	// Skip rendering parts covered by the panels
 	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+#ifdef __N64__
+		// f2v55: quitar 4 columnas (256) dejaba franjas negras: el panel solo tapa gnScreenWidth / 2
+		columns -= N64UiMode ? 2 : ((*GetOptions().Graphics.zoom) ? 2 : 4);
+#else
 		columns -= (*GetOptions().Graphics.zoom) ? 2 : 4;
+#endif
 	}
 
 	UpdateMissilesRendererData();
@@ -1547,6 +1562,36 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
  * @param out Buffer to render to
  * @param startPosition Center of view in dPiece coordinates
  */
+#ifdef __N64__
+/**
+ * f2v55: minimapa siempre a la vista, pequeno, en el hueco de la izquierda que deja el panel
+ * (ahora pegado a la derecha). Si el panel es grande y no cabe, arriba a la izquierda.
+ * Con el mapa grande abierto o con la interfaz en la capa de 640x480 no se dibuja.
+ */
+void N64DrawMinimap(const Surface &out)
+{
+	if (N64UiMode || N64OccPixels != out.begin() || gnScreenWidth < 200)
+		return;
+	const int margin = gnScreenWidth / 24; // los televisores cortan los bordes
+	const int space = N64OccX0 - 3 - margin - 8;
+	Rectangle rect;
+	if (space >= 96) {
+		const int w = std::min(space, 128);
+		const int h = w / 2;
+		rect = Rectangle { { margin, gnViewportHeight - h - 6 }, Size { w, h } };
+	} else {
+		rect = Rectangle { { margin, margin / 2 + 2 }, Size { 112, 56 } };
+	}
+	const Rectangle savedRect = MinimapRect;
+	const AutomapType savedType = GetAutomapType();
+	MinimapRect = rect;
+	SetAutomapType(AutomapType::Minimap);
+	DrawAutomap(out.subregionY(0, gnViewportHeight));
+	SetAutomapType(savedType);
+	MinimapRect = savedRect;
+}
+#endif
+
 void DrawView(const Surface &out, Point startPosition)
 {
 #ifdef _DEBUG
@@ -1555,9 +1600,19 @@ void DrawView(const Surface &out, Point startPosition)
 	Displacement offset = {};
 	CalcFirstTilePosition(startPosition, offset);
 	DrawGame(out, startPosition, offset);
+#ifdef __N64__
+	const unsigned n64Am0 = n64_us();
+	if (AutomapActive) {
+		DrawAutomap(out.subregionY(0, gnViewportHeight));
+	} else {
+		N64DrawMinimap(out);
+	}
+	n64_prof_add(30, n64_us() - n64Am0);
+#else
 	if (AutomapActive) {
 		DrawAutomap(out.subregionY(0, gnViewportHeight));
 	}
+#endif
 #ifdef _DEBUG
 	bool debugGridTextNeeded = IsDebugGridTextNeeded();
 	if (debugGridTextNeeded || DebugGrid) {

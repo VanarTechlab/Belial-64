@@ -1774,10 +1774,16 @@ void DrawAutomap(const Surface &out)
 
 	const int scale = (GetAutomapType() == AutomapType::Minimap) ? MinimapScale : AutoMapScale;
 	const int d = (scale * 64) / 100;
-	int cells = (2 * (gnScreenWidth / 2 / d)) + 1;
-	if (((gnScreenWidth / 2) % d) != 0)
+#ifdef __N64__
+	// f2v55: el minimapa solo recorre las casillas de su recuadro (antes, las de toda la pantalla)
+	const int amHalfW = (GetAutomapType() == AutomapType::Minimap) ? MinimapRect.size.width / 2 + d : gnScreenWidth / 2;
+#else
+	const int amHalfW = gnScreenWidth / 2;
+#endif
+	int cells = (2 * (amHalfW / d)) + 1;
+	if ((amHalfW % d) != 0)
 		cells++;
-	if (((gnScreenWidth / 2) % d) >= (scale * 32) / 100)
+	if ((amHalfW % d) >= (scale * 32) / 100)
 		cells++;
 	if ((myPlayerOffset.deltaX + myPlayerOffset.deltaY) != 0)
 		cells++;
@@ -1871,7 +1877,10 @@ void DrawAutomap(const Surface &out)
 		SearchAutomapItem(out, myPlayerOffset, std::max(MAXDUNX, MAXDUNY), ShouldHighlightDebugAutomapTile);
 #endif
 
-	DrawAutomapText(out);
+#ifdef __N64__
+	if (GetAutomapType() != AutomapType::Minimap)
+#endif
+		DrawAutomapText(out);
 }
 
 void UpdateAutomapExplorer(Point map, MapExplorationType explorer)
