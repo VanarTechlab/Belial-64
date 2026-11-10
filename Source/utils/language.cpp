@@ -400,7 +400,9 @@ void LanguageInitialize()
 		return;
 	}
 
-#ifdef UNPACKED_MPQS
+#if defined(UNPACKED_MPQS) && defined(__N64__)
+	const bool readWholeFile = true; // f2v73: leida de golpe (con miles de lecturas pequenas tardaba 6,5 s)
+#elif defined(UNPACKED_MPQS)
 	const bool readWholeFile = false;
 #else
 #ifdef USE_SDL3

@@ -2019,6 +2019,14 @@ std::expected<void, std::string> LoadLevel(LevelConversionData *levelConversionD
 	if (!archive || !archive->HasFile(szName))
 		GetPermLevelNames(szName);
 	LoadHelper file(std::move(archive), szName);
+#ifdef __N64__
+	if (!file.IsValid()) {
+		// f2v73: partidas guardadas antes del arreglo de RenameFile perdieron los niveles visitados:
+		// en vez de volver al menu con un error, el nivel se queda como recien creado
+		LogInfo("N64: falta el nivel guardado {}; se sigue sin el", szName);
+		return {};
+	}
+#endif
 	if (!file.IsValid())
 		return std::unexpected(std::string(_("Unable to open save file archive")));
 

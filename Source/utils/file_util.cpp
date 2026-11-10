@@ -393,6 +393,39 @@ bool ResizeFile(const char *path, std::uintmax_t size)
 
 void RenameFile(const char *from, const char *to)
 {
+#ifdef __N64__
+	// f2v73: la SD de libdragon no tiene rename(): al guardar, los niveles temporales (temp*) no pasaban
+	// a permanentes (perm*) y al cargar la partida desaparecian ("No se puede abrir el archivo
+	// guardado" al volver al pueblo). Se copia y se borra el original.
+	{
+		FILE *src = std::fopen(from, "rb");
+		if (src == nullptr)
+			return;
+		std::remove(to);
+		FILE *dst = std::fopen(to, "wb");
+		if (dst == nullptr) {
+			std::fclose(src);
+			LogError("No se pudo crear {}", to);
+			return;
+		}
+		static char buf[4096];
+		bool ok = true;
+		size_t n;
+		while ((n = std::fread(buf, 1, sizeof(buf), src)) > 0) {
+			if (std::fwrite(buf, 1, n, dst) != n) {
+				ok = false;
+				break;
+			}
+		}
+		std::fclose(src);
+		std::fclose(dst);
+		if (ok)
+			std::remove(from);
+		else
+			LogError("No se pudo copiar {} a {}", from, to);
+		return;
+	}
+#endif
 #ifdef _WIN32
 #ifdef DEVILUTIONX_WINDOWS_NO_WCHAR
 	::MoveFile(from, to);
