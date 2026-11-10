@@ -1243,5 +1243,14 @@ if(N64)
     engine/render/scrollrt.cpp
     engine/render/primitive_render.cpp
     engine/render/text_render.cpp
+    engine/render/automap_render.cpp
+    # f2v51: tambien lo que se ejecuta en cada tic o cada fotograma fuera del dibujo (monster,
+    # player y missiles no: son grandes y con -O2 crecian ~70 KiB de RAM para ganar ~1 ms)
+    engine/animationinfo.cpp
+    engine/palette.cpp
+    engine/path.cpp
+    lighting.cpp
+    cursor.cpp
+    controls/plrctrls.cpp
     PROPERTIES COMPILE_OPTIONS "-O2")
 endif()

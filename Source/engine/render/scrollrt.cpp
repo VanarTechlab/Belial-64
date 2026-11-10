@@ -1409,7 +1409,6 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 		mix(static_cast<uint32_t>(offset.deltaX & 0xFFFF) | (static_cast<uint32_t>(offset.deltaY & 0xFFFF) << 16));
 		mix(static_cast<uint32_t>(rows) | (static_cast<uint32_t>(columns) << 16));
 		mix(static_cast<uint32_t>(out.w()) | (static_cast<uint32_t>(out.h()) << 16));
-		mix(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(out.at(0, 0))));
 		mix(static_cast<uint32_t>(N64OccX0) ^ (static_cast<uint32_t>(N64OccY0) << 8) ^ (static_cast<uint32_t>(N64OccX1) << 16) ^ (static_cast<uint32_t>(N64OccY1) << 24));
 		mix(static_cast<uint32_t>(currlevel) | (static_cast<uint32_t>(leveltype) << 8) | (static_cast<uint32_t>(setlevel) << 16));
 		Point tp = position;
