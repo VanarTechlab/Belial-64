@@ -113,7 +113,14 @@ void DrawXPBar(const Surface &out)
 			const uint64_t next = GetNextExperienceThresholdForLevel(p.getCharacterLevel());
 			permille = (p._pExperience <= prev || next <= prev) ? 0 : static_cast<int>((p._pExperience - prev) * 1000 / (next - prev));
 		}
-		n64_xpbar_set(ChatFlag ? -1 : permille, p._pStatPts > 0 ? 1 : 0);
+		// f2v62: parpadea solo 3 s al subir de nivel (antes, mientras habia puntos sin repartir)
+		static int lastLevel = 0;
+		static uint32_t blinkUntil = 0;
+		const int lvl = p.getCharacterLevel();
+		if (lastLevel != 0 && lvl > lastLevel)
+			blinkUntil = SDL_GetTicks() + 3000;
+		lastLevel = lvl;
+		n64_xpbar_set(ChatFlag ? -1 : permille, static_cast<int32_t>(blinkUntil - SDL_GetTicks()) > 0 ? 1 : 0);
 		return;
 	}
 #endif

@@ -139,6 +139,7 @@ Surface N64PanelOut(const Surface &out)
 extern "C" int n64_heap_free_kib(void);
 extern "C" int n64_rdp_copy8(uint8_t *dst, int dpitch, const uint8_t *src, int spitch, int w, int h);
 extern "C" int n64_rdp_fill8(uint8_t *dst, int dpitch, int w, int h, int value);
+extern "C" int n64_rdp_blit8(uint8_t *dst, int dpitch, int dh, int dx, int dy, const uint8_t *src, int spitch, int sh, int sx, int sy, int w, int h);
 extern "C" void *memalign(size_t align, size_t size);
 struct N64FreeDeleter {
 	void operator()(uint8_t *p) const { free(p); }
@@ -1466,77 +1467,157 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 #ifdef __N64__
 	const unsigned n64F0 = n64_us();
 	{
-		// clave de todo lo que lee DrawFloor (mismo recorrido de casillas)
-		uint32_t h = 2166136261U;
-		auto mix = [&h](uint32_t v) { h = (h ^ v) * 16777619U; };
-		mix(static_cast<uint32_t>(position.x) | (static_cast<uint32_t>(position.y) << 16));
-		mix(static_cast<uint32_t>(offset.deltaX & 0xFFFF) | (static_cast<uint32_t>(offset.deltaY & 0xFFFF) << 16));
-		mix(static_cast<uint32_t>(rows) | (static_cast<uint32_t>(columns) << 16));
-		mix(static_cast<uint32_t>(out.w()) | (static_cast<uint32_t>(out.h()) << 16));
-		mix(static_cast<uint32_t>(N64OccX0) ^ (static_cast<uint32_t>(N64OccY0) << 8) ^ (static_cast<uint32_t>(N64OccX1) << 16) ^ (static_cast<uint32_t>(N64OccY1) << 24));
-		mix(static_cast<uint32_t>(currlevel) | (static_cast<uint32_t>(leveltype) << 8) | (static_cast<uint32_t>(setlevel) << 16));
-		Point tp = position;
-		int cols = columns;
-		for (int i = 0; i < rows; i++) {
-			for (int j = 0; j < cols; j++, tp += Direction::East) {
-				if (!InDungeonBounds(tp))
-					continue;
-				mix(static_cast<uint32_t>(dPiece[tp.x][tp.y]) | (static_cast<uint32_t>(dLight[tp.x][tp.y]) << 16));
+		// f2v62: suelo guardado que se desplaza. La imagen del suelo del cuadro anterior (solo suelo, lo
+		// demas a 0) se mueve con el RDP lo que se movio la camara y solo se dibujan las casillas que
+		// entran por el borde, las que cambiaron de luz o de pieza y las que estaban bajo el panel.
+		// Quieto es lo mismo que antes (copia entera); al andar ya no se redibuja todo el suelo.
+		static uint32_t keyTab[64][64];
+		static Point bPos;
+		static Displacement bOff;
+		static uint32_t bEnv = 0;
+		const int fw = out.w();
+		const int fh = out.h();
+		const bool occOn = N64OccPixels == out.begin();
+		uint32_t env = 2166136261U;
+		{
+			auto mix = [&env](uint32_t v) { env = (env ^ v) * 16777619U; };
+			mix(static_cast<uint32_t>(fw) | (static_cast<uint32_t>(fh) << 16));
+			mix(occOn ? (static_cast<uint32_t>(N64OccX0) ^ (static_cast<uint32_t>(N64OccY0) << 8) ^ (static_cast<uint32_t>(N64OccX1) << 16) ^ (static_cast<uint32_t>(N64OccY1) << 24)) : 0U);
+			mix(static_cast<uint32_t>(currlevel) | (static_cast<uint32_t>(leveltype) << 8) | (static_cast<uint32_t>(setlevel) << 16) | (*GetOptions().Graphics.perPixelLighting ? (1U << 24) : 0U));
+		}
+		auto tileKey = [](Point t) -> uint32_t {
+			uint32_t k = static_cast<uint32_t>(dPiece[t.x][t.y]) & 0xFFFFU;
+			k |= static_cast<uint32_t>(dLight[t.x][t.y]) << 16;
+			uint32_t nh = 0; // la luz por pixel mezcla la de las casillas vecinas
+			for (int ny = -1; ny <= 1; ny++) {
+				for (int nx = -1; nx <= 1; nx++) {
+					const Point n { t.x + nx, t.y + ny };
+					if ((nx | ny) != 0 && InDungeonBounds(n))
+						nh = nh * 31U + dLight[n.x][n.y];
+				}
 			}
-			tp += Displacement(Direction::West) * cols;
-			if ((i & 1) != 0) {
-				tp.x++;
-				cols--;
-			} else {
-				tp.y++;
-				cols++;
+			return k | ((nh ^ (nh >> 8) ^ (nh >> 16)) & 0xFFU) << 24;
+		};
+		auto forEachTile = [&](auto &&fn) {
+			Point tp = position;
+			Point sp = Point {} + offset;
+			int cols = columns;
+			for (int i = 0; i < rows; i++) {
+				for (int j = 0; j < cols; j++, tp += Direction::East, sp.x += TILE_WIDTH) {
+					if (InDungeonBounds(tp))
+						fn(tp, sp);
+				}
+				tp += Displacement(Direction::West) * cols;
+				sp.x -= cols * TILE_WIDTH;
+				sp.y += TILE_HEIGHT / 2;
+				if ((i & 1) != 0) {
+					tp.x++;
+					cols--;
+					sp.x += TILE_WIDTH / 2;
+				} else {
+					tp.y++;
+					cols++;
+					sp.x -= TILE_WIDTH / 2;
+				}
+			}
+		};
+		const size_t need = static_cast<size_t>(fw) * static_cast<size_t>(fh);
+		bool full = true;
+		int sdx = 0;
+		int sdy = 0;
+		if (N64FloorValid && N64FloorSaveSize == need && env == bEnv) {
+			const Displacement sh = (position - bPos).worldToScreen() + (offset - bOff);
+			sdx = sh.deltaX;
+			sdy = sh.deltaY;
+			if (std::abs(sdx) < fw - TILE_WIDTH && std::abs(sdy) < fh - TILE_HEIGHT) {
+				if ((sdx & 1) == 0)
+					full = false;
+				else
+					n64_prof_add(34, 1);
 			}
 		}
-		const size_t need = static_cast<size_t>(out.w()) * static_cast<size_t>(out.h());
-		if (N64FloorValid && h == N64FloorKey && N64FloorSaveSize == need) {
-			// f2v53: lo copia el RDP (~1 ms; con la CPU eran ~10 ms)
-			if (n64_rdp_copy8(out.at(0, 0), out.pitch(), N64FloorSave.get(), out.w(), out.w(), out.h()) == 0) {
-				for (int y = 0; y < out.h(); y++)
-					memcpy(out.at(0, y), &N64FloorSave[static_cast<size_t>(y) * out.w()], static_cast<size_t>(out.w()));
-			}
-			N64FloorReused++;
-			n64_prof_add(27, 1);
-		} else {
-			// f2v53: si se va a guardar, antes se borra la imagen: lo que no es suelo quedaba con
-			// restos del fotograma anterior (con el doble bufer, de dos antes) y se guardaba con el
-			// suelo; asi el mensaje "Game saved" no se iba mientras el personaje estaba quieto
-			if (h == N64FloorLastKey) {
-				if (n64_rdp_fill8(out.at(0, 0), out.pitch(), out.w(), out.h(), 0) == 0) {
-					for (int y = 0; y < out.h(); y++)
-						memset(out.at(0, y), 0, static_cast<size_t>(out.w()));
+		if (!full) {
+			const int cw = fw - std::abs(sdx);
+			const int ch = fh - std::abs(sdy);
+			const int dx0 = std::max(0, sdx);
+			const int dy0 = std::max(0, sdy);
+			if (n64_rdp_blit8(out.at(0, 0), out.pitch(), fh, dx0, dy0, N64FloorSave.get(), fw, fh, std::max(0, -sdx), std::max(0, -sdy), cw, ch) == 0) {
+				full = true;
+				n64_prof_add(34, 1);
+			} else {
+				for (int y = 0; y < fh; y++) {
+					uint8_t *row = out.at(0, y);
+					if (y < dy0 || y >= dy0 + ch) {
+						memset(row, 0, static_cast<size_t>(fw));
+					} else {
+						if (dx0 > 0)
+							memset(row, 0, static_cast<size_t>(dx0));
+						if (dx0 + cw < fw)
+							memset(row + dx0 + cw, 0, static_cast<size_t>(fw - dx0 - cw));
+					}
 				}
+				unsigned redrawn = 0;
+				bool needFull = false;
+				forEachTile([&](Point tp, Point sp) {
+					uint32_t &slot = keyTab[tp.x & 63][tp.y & 63];
+					const uint32_t k = tileKey(tp);
+					if (IsFloor(tp)) {
+						const int x0 = sp.x - sdx;
+						const int y0 = sp.y - (TILE_HEIGHT - 1) - sdy;
+						bool ok = slot == k && x0 >= 0 && y0 >= 0 && x0 + TILE_WIDTH <= fw && y0 + TILE_HEIGHT <= fh;
+						if (ok && occOn && x0 < N64OccX1 && x0 + TILE_WIDTH > N64OccX0 && y0 < N64OccY1 && y0 + TILE_HEIGHT > N64OccY0)
+							ok = false; // estaba bajo el panel: no se dibujo
+						if (!ok) {
+							DrawFloorTile(out, lightmap, tp, sp);
+							redrawn++;
+						}
+					} else if ((slot & 0xFFFFU) != (k & 0xFFFFU)) {
+						needFull = true; // cambio de pieza (puerta): lo de antes podria quedar
+					}
+					slot = k;
+				});
+				if (needFull) {
+					full = true;
+				} else {
+					n64_prof_add(32, 1);
+					n64_prof_add(33, redrawn);
+					if (redrawn == 0)
+						n64_prof_add(27, 1);
+					N64FloorReused++;
+				}
+			}
+		}
+		if (full) {
+			if (n64_rdp_fill8(out.at(0, 0), out.pitch(), fw, fh, 0) == 0) {
+				for (int y = 0; y < fh; y++)
+					memset(out.at(0, y), 0, static_cast<size_t>(fw));
 			}
 			DrawFloor(out, lightmap, position, Point {} + offset, rows, columns);
+			forEachTile([&](Point tp, Point) { keyTab[tp.x & 63][tp.y & 63] = tileKey(tp); });
 			N64FloorDrawn++;
 			n64_prof_add(28, 1);
-			N64FloorValid = false;
-			// se guarda solo si la clave se repite (camara quieta): andando no se gasta en copiar
-			if (h == N64FloorLastKey) {
-				if (N64FloorSaveSize != need) {
-					N64FloorSave = nullptr;
-					N64FloorSaveSize = 0;
-					if (n64_heap_free_kib() > static_cast<int>(need / 1024) + 400) {
-						N64FloorSave.reset(static_cast<uint8_t *>(memalign(64, need)));
-						if (N64FloorSave != nullptr)
-							N64FloorSaveSize = need;
-					}
-				}
-				if (N64FloorSave != nullptr) {
-					if (n64_rdp_copy8(N64FloorSave.get(), out.w(), out.at(0, 0), out.pitch(), out.w(), out.h()) == 0) {
-						for (int y = 0; y < out.h(); y++)
-							memcpy(&N64FloorSave[static_cast<size_t>(y) * out.w()], out.at(0, y), static_cast<size_t>(out.w()));
-					}
-					N64FloorKey = h;
-					N64FloorValid = true;
-				}
+		}
+		// se guarda el suelo de este cuadro para el siguiente
+		N64FloorValid = false;
+		if (N64FloorSaveSize != need) {
+			N64FloorSave = nullptr;
+			N64FloorSaveSize = 0;
+			if (n64_heap_free_kib() > static_cast<int>(need / 1024) + 400) {
+				N64FloorSave.reset(static_cast<uint8_t *>(memalign(64, need)));
+				if (N64FloorSave != nullptr)
+					N64FloorSaveSize = need;
 			}
 		}
-		N64FloorLastKey = h;
+		if (N64FloorSave != nullptr) {
+			if (n64_rdp_copy8(N64FloorSave.get(), fw, out.at(0, 0), out.pitch(), fw, fh) == 0) {
+				for (int y = 0; y < fh; y++)
+					memcpy(&N64FloorSave[static_cast<size_t>(y) * fw], out.at(0, y), static_cast<size_t>(fw));
+			}
+			bPos = position;
+			bOff = offset;
+			bEnv = env;
+			N64FloorValid = true;
+		}
 	}
 	const unsigned n64F1 = n64_us();
 	n64_prof_add(3, n64F1 - n64F0);
