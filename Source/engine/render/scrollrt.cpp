@@ -199,13 +199,12 @@ void N64UpdateUiMode()
 	const bool want = gnScreenWidth < 640 && N64WantUiMode();
 	if (want && n64OverlaySurface == nullptr) {
 		N64FreeFloorSave(); // deja sitio
+		// f2v75: siempre se suelta antes la cache de CEL (un bloque grande y seguido) para que la capa
+		// caiga en su hueco; al cerrar la capa se suelta otra vez para que la cache vuelva a ese hueco.
+		// Antes la memoria se iba troceando: la cache quedaba pequena (el pueblo iba a 6 fps) y al
+		// guardar no cabia el bloque del guardado.
+		n64_cel_cache_release();
 		n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
-		if (n64OverlaySurface == nullptr) {
-			// f2v72: con la memoria troceada no cabia (el menu de START salia debajo del panel):
-			// se suelta la cache de CEL (se vuelve a pedir sola) y se reintenta
-			n64_cel_cache_release();
-			n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
-		}
 	}
 	const bool on = want && n64OverlaySurface != nullptr;
 	if (on != N64UiMode) {
@@ -228,8 +227,10 @@ void N64UpdateUiMode()
 		GetDrawnCursor().rect.size = { 0, 0 }; // lo guardado detras del cursor era de la otra imagen
 		RedrawEverything();
 	}
-	if (!want)
+	if (!want && n64OverlaySurface != nullptr) {
 		N64FreeOverlay();
+		n64_cel_cache_release(); // f2v75: que la cache vuelva al hueco grande
+	}
 	if (N64UiMode)
 		n64_overlay_attach(static_cast<uint8_t *>(n64OverlaySurface->pixels), n64OverlaySurface->pitch);
 	n64_panel_visible(N64UiMode && !N64UiStoreOnly() ? 0 : 1);

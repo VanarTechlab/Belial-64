@@ -77,6 +77,10 @@ struct N64LangEntry {
 };
 std::vector<N64LangEntry> n64Lang;
 std::vector<char *> n64LangCache;
+std::vector<char *> n64LangHeap;
+constexpr size_t N64LangArenaSize = 48 * 1024;
+std::unique_ptr<char[]> n64LangArena;
+size_t n64LangArenaUsed = 0;
 bool n64LangOn = false;
 uint64_t N64Hash(std::string_view s)
 {
@@ -89,9 +93,12 @@ uint64_t N64Hash(std::string_view s)
 }
 void N64LangClear()
 {
-	for (char *p : n64LangCache)
+	for (char *p : n64LangHeap)
 		delete[] p;
+	n64LangHeap = {};
 	n64LangCache = {};
+	n64LangArena = nullptr;
+	n64LangArenaUsed = 0;
 	n64Lang = {};
 	n64LangOn = false;
 }
@@ -104,7 +111,16 @@ bool N64Find(std::string_view key, unsigned form, std::string_view &out)
 			continue;
 		const size_t idx = static_cast<size_t>(it - n64Lang.begin());
 		if (n64LangCache[idx] == nullptr) {
-			char *p = new char[it->len + 1];
+			// f2v75: los textos van a un bloque propio (pedido una vez al cargar el idioma) para no
+			// trocear la memoria con miles de trozos pequenos
+			char *p;
+			if (n64LangArena != nullptr && n64LangArenaUsed + it->len + 1 <= N64LangArenaSize) {
+				p = n64LangArena.get() + n64LangArenaUsed;
+				n64LangArenaUsed += it->len + 1;
+			} else {
+				p = new char[it->len + 1];
+				n64LangHeap.push_back(p);
+			}
 			n64_lang_read(p, it->off, it->len);
 			p[it->len] = '\0';
 			n64LangCache[idx] = p;
@@ -509,6 +525,7 @@ void LanguageInitialize()
 			std::sort(n64Lang.begin(), n64Lang.end(), [](const N64LangEntry &a, const N64LangEntry &b) { return a.hash != b.hash ? a.hash < b.hash : a.form < b.form; });
 			n64Lang.shrink_to_fit();
 			n64LangCache.assign(n64Lang.size(), nullptr);
+			n64LangArena.reset(new char[N64LangArenaSize]);
 			n64LangOn = true;
 			LogInfo("Idioma: {} en el cartucho, {} textos, indice {} KiB, {} ms", lang, n64Lang.size(), n64Lang.size() * (sizeof(N64LangEntry) + sizeof(char *)) / 1024, SDL_GetTicks() - t0);
 			return;
