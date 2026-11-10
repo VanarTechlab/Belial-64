@@ -27,6 +27,8 @@
 #include "utils/log.hpp"
 #include "utils/paths.h"
 #include "utils/string_view_hash.hpp"
+#include "utils/str_cat.hpp"
+#include <algorithm>
 
 #define MO_MAGIC 0x950412de
 
@@ -61,6 +63,58 @@ std::string_view GetTranslation(TranslationRef ref)
 {
 	return { &translationValues[ref >> TranslationRefSizeBits], ref & TranslationRefSizeMask };
 }
+
+#ifdef __N64__
+// f2v74: la traduccion vive en el cartucho; en la RAM solo un indice (hash de la clave -> posicion) y
+// los textos que se van usando (antes ~300 KiB con el archivo entero en la RAM).
+extern "C" uint32_t n64_lang_to_cart(const char *path);
+extern "C" void n64_lang_read(void *dst, uint32_t off, uint32_t len);
+struct N64LangEntry {
+	uint64_t hash;
+	uint32_t off;
+	uint16_t len;
+	uint8_t form;
+};
+std::vector<N64LangEntry> n64Lang;
+std::vector<char *> n64LangCache;
+bool n64LangOn = false;
+uint64_t N64Hash(std::string_view s)
+{
+	uint64_t h = 1469598103934665603ULL;
+	for (const char c : s) {
+		h ^= static_cast<uint8_t>(c);
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+void N64LangClear()
+{
+	for (char *p : n64LangCache)
+		delete[] p;
+	n64LangCache = {};
+	n64Lang = {};
+	n64LangOn = false;
+}
+bool N64Find(std::string_view key, unsigned form, std::string_view &out)
+{
+	const uint64_t h = N64Hash(key);
+	auto it = std::lower_bound(n64Lang.begin(), n64Lang.end(), h, [](const N64LangEntry &e, uint64_t v) { return e.hash < v; });
+	for (; it != n64Lang.end() && it->hash == h; ++it) {
+		if (it->form != form)
+			continue;
+		const size_t idx = static_cast<size_t>(it - n64Lang.begin());
+		if (n64LangCache[idx] == nullptr) {
+			char *p = new char[it->len + 1];
+			n64_lang_read(p, it->off, it->len);
+			p[it->len] = '\0';
+			n64LangCache[idx] = p;
+		}
+		out = std::string_view(n64LangCache[idx], it->len);
+		return true;
+	}
+	return false;
+}
+#endif
 
 } // namespace
 
@@ -294,6 +348,12 @@ std::string_view LanguageParticularTranslate(std::string_view context, std::stri
 	key += Glue;
 	key.append(message);
 
+#ifdef __N64__
+	if (n64LangOn) {
+		std::string_view r;
+		return N64Find(key, 0, r) ? r : message;
+	}
+#endif
 	auto it = translation[0].find(key.c_str());
 	if (it == translation[0].end()) {
 		return message;
@@ -305,6 +365,14 @@ std::string_view LanguageParticularTranslate(std::string_view context, std::stri
 std::string_view LanguagePluralTranslate(const char *singular, std::string_view plural, int count)
 {
 	const int n = GetLocalPluralId(count);
+#ifdef __N64__
+	if (n64LangOn) {
+		std::string_view r;
+		if (N64Find(singular, static_cast<unsigned>(n), r))
+			return r;
+		return count != 1 ? plural : std::string_view(singular);
+	}
+#endif
 
 	auto it = translation[n].find(singular);
 	if (it == translation[n].end()) {
@@ -318,6 +386,12 @@ std::string_view LanguagePluralTranslate(const char *singular, std::string_view 
 
 std::string_view LanguageTranslate(const char *key)
 {
+#ifdef __N64__
+	if (n64LangOn) {
+		std::string_view r;
+		return N64Find(key, 0, r) ? r : std::string_view(key);
+	}
+#endif
 	auto it = translation[0].find(key);
 	if (it == translation[0].end()) {
 		return key;
@@ -353,6 +427,7 @@ void LanguageInitialize()
 	translationValues = nullptr;
 #ifdef __N64__
 	forceLocale.clear(); // f2v72: un fallo anterior dejaba el ingles forzado para siempre
+	N64LangClear();
 #endif
 
 	const std::string lang(GetLanguageCode());
@@ -379,6 +454,68 @@ void LanguageInitialize()
 		return;
 	}
 
+#ifdef __N64__
+	{
+		// f2v74: copiar el .gmo al cartucho y quedarse solo con un indice en la RAM
+		const uint32_t t0 = SDL_GetTicks();
+		const std::string full = StrCat(paths::AssetsPath(), lang, ".gmo");
+		const uint32_t size = n64_lang_to_cart(full.c_str());
+		MoHead head {};
+		if (size >= sizeof(MoHead)) {
+			n64_lang_read(&head, 0, sizeof(MoHead));
+			SwapLE(head);
+		}
+		if (size >= sizeof(MoHead) && head.magic == MO_MAGIC && head.nbMappings > 1
+		    && head.srcOffset + head.nbMappings * sizeof(MoEntry) <= size && head.dstOffset + head.nbMappings * sizeof(MoEntry) <= size) {
+			std::vector<MoEntry> src(head.nbMappings);
+			std::vector<MoEntry> dst(head.nbMappings);
+			n64_lang_read(src.data(), head.srcOffset, head.nbMappings * sizeof(MoEntry));
+			n64_lang_read(dst.data(), head.dstOffset, head.nbMappings * sizeof(MoEntry));
+			for (uint32_t i = 0; i < head.nbMappings; i++) {
+				SwapLE(src[i]);
+				SwapLE(dst[i]);
+			}
+			{
+				std::string meta(dst[0].length, '\0');
+				n64_lang_read(meta.data(), dst[0].offset, dst[0].length);
+				ParseMetadata(meta);
+			}
+			translation.resize(PluralForms);
+			for (unsigned i = 0; i < PluralForms; i++)
+				translation[i] = {};
+			n64Lang.reserve(head.nbMappings + 64);
+			std::string key;
+			std::string value;
+			for (uint32_t i = 1; i < head.nbMappings; i++) {
+				if (src[i].offset + src[i].length > size || dst[i].offset + dst[i].length > size)
+					continue;
+				key.assign(src[i].length, '\0');
+				n64_lang_read(key.data(), src[i].offset, src[i].length);
+				const size_t keyEnd = key.find('\0'); // la forma plural de la clave no cuenta
+				const uint64_t h = N64Hash(std::string_view(key).substr(0, keyEnd));
+				value.assign(dst[i].length, '\0');
+				n64_lang_read(value.data(), dst[i].offset, dst[i].length);
+				size_t pos = 0;
+				for (unsigned j = 0; j < PluralForms && pos <= value.size(); j++) {
+					size_t end = value.find('\0', pos);
+					if (end == std::string::npos)
+						end = value.size();
+					n64Lang.push_back({ h, dst[i].offset + static_cast<uint32_t>(pos), static_cast<uint16_t>(end - pos), static_cast<uint8_t>(j) });
+					if (end >= value.size())
+						break;
+					pos = end + 1;
+				}
+			}
+			std::sort(n64Lang.begin(), n64Lang.end(), [](const N64LangEntry &a, const N64LangEntry &b) { return a.hash != b.hash ? a.hash < b.hash : a.form < b.form; });
+			n64Lang.shrink_to_fit();
+			n64LangCache.assign(n64Lang.size(), nullptr);
+			n64LangOn = true;
+			LogInfo("Idioma: {} en el cartucho, {} textos, indice {} KiB, {} ms", lang, n64Lang.size(), n64Lang.size() * (sizeof(N64LangEntry) + sizeof(char *)) / 1024, SDL_GetTicks() - t0);
+			return;
+		}
+		LogInfo("Idioma: no se pudo usar {} desde el cartucho; se carga en la RAM", full);
+	}
+#endif
 	AssetHandle handle;
 	const uint32_t loadTranslationsStart = SDL_GetTicks();
 
