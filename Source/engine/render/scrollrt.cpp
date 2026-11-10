@@ -233,7 +233,8 @@ void N64UpdateUiMode()
 	}
 	if (N64UiMode)
 		n64_overlay_attach(static_cast<uint8_t *>(n64OverlaySurface->pixels), n64OverlaySurface->pitch);
-	n64_panel_visible(N64UiMode && !N64UiStoreOnly() ? 0 : 1);
+	// f2v76: con el menu de START abierto nunca se ve el panel (tampoco si no hubo capa de menus)
+	n64_panel_visible((N64UiMode && !N64UiStoreOnly()) || gmenu_is_active() ? 0 : 1);
 	static bool n64StoreOnlySeen = false;
 	if (N64UiStoreOnly() != n64StoreOnlySeen) {
 		n64StoreOnlySeen = N64UiStoreOnly();
@@ -1688,7 +1689,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
  */
 void N64DrawMinimap(const Surface &out)
 {
-	if (N64UiMode || N64OccPixels != out.begin() || gnScreenWidth < 200)
+	if (N64UiMode || gmenu_is_active() || N64OccPixels != out.begin() || gnScreenWidth < 200)
 		return;
 	const int margin = gnScreenWidth / 24; // los televisores cortan los bordes
 	const int space = N64OccX0 - 3 - margin - 8;
