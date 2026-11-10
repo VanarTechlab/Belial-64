@@ -2854,6 +2854,9 @@ void FreeGameMem()
 #endif
 }
 
+#ifdef __N64__
+extern "C" void n64_cel_cache_release(void);
+#endif
 bool StartGame(bool bNewGame, bool bSinglePlayer)
 {
 	gbSelectProvider = true;
@@ -2889,6 +2892,18 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 			uMsg = WM_DIABLOADGAME;
 		}
 		RunGameLoop(uMsg);
+#ifdef __N64__
+		{
+			// f2v61: al salir al menu principal se sueltan las capas y caches del juego. La capa de
+			// 640x480 seguia puesta (el menu de START se veia encima del menu principal) y ocupaba
+			// 300 KiB: al cargar el personaje faltaba un bloque de 217 KiB y se colgaba
+			extern bool N64UiMode;
+			void N64FreePanelLayer();
+			N64UiMode = false;
+			N64FreePanelLayer();
+			n64_cel_cache_release();
+		}
+#endif
 		NetClose();
 		UnloadFonts();
 #ifdef __N64__
