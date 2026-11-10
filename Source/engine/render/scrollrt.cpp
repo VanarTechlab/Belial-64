@@ -1745,34 +1745,7 @@ void DrawView(const Surface &out, Point startPosition)
 #endif
 	Displacement offset = {};
 	CalcFirstTilePosition(startPosition, offset);
-#ifdef __N64__
-	{
-		// f2v77: con un menu abierto (capa de 640x480) el mundo de detras se dibuja 1 de cada 3 cuadros;
-		// en los otros se copia el ultimo dibujado (RDP, ~1 ms). Los menus van mas fluidos.
-		static unsigned n64UiFrame = 0;
-		static const uint8_t *n64LastWorld = nullptr;
-		bool drawWorld = true;
-		if (N64UiMode) {
-			if ((n64UiFrame++ % 3) != 0 && n64LastWorld != nullptr)
-				drawWorld = false;
-		} else {
-			n64UiFrame = 0;
-			n64LastWorld = nullptr;
-		}
-		if (drawWorld) {
-			DrawGame(out, startPosition, offset);
-			if (N64UiMode)
-				n64LastWorld = out.begin();
-		} else if (n64LastWorld != out.begin()) {
-			if (n64_rdp_copy8(out.at(0, 0), out.pitch(), n64LastWorld, out.pitch(), out.w(), out.h()) == 0) {
-				for (int y = 0; y < out.h(); y++)
-					memcpy(out.at(0, y), n64LastWorld + static_cast<size_t>(y) * out.pitch(), static_cast<size_t>(out.w()));
-			}
-		}
-	}
-#else
 	DrawGame(out, startPosition, offset);
-#endif
 #ifdef __N64__
 	const unsigned n64Am0 = n64_us();
 	if (AutomapActive) {
