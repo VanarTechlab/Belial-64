@@ -104,6 +104,7 @@ extern "C" int n64_panel_occluder(int *x0, int *y0, int *x1, int *y1);
 void CalculatePanelAreas();
 int N64OccX0, N64OccY0, N64OccX1, N64OccY1;
 const uint8_t *N64OccPixels;
+bool N64UiStoreOnly();
 SDL_Surface *n64OverlaySurfaceFwd();
 namespace {
 // Capa del panel (f2v26): 640x160, el panel ocupa las filas 32..159 y encima queda sitio
@@ -114,7 +115,7 @@ constexpr int N64PanelRow = 32;
 SDL_Surface *n64PanelSurface;
 Surface N64PanelOut(const Surface &out)
 {
-	if (n64OverlaySurfaceFwd() != nullptr)
+	if (n64OverlaySurfaceFwd() != nullptr && !N64UiStoreOnly())
 		return Surface(n64OverlaySurfaceFwd()); // f2v54: modo interfaz: el panel va en la capa de 640x480
 	if (gnScreenWidth >= GetMainPanel().size.width)
 		return out;
@@ -186,6 +187,11 @@ bool N64WantUiMode()
 	return invflag || CharFlag || SpellbookFlag || QuestLogIsOpen || SpellSelectFlag || IsStashOpen || IsVisualStoreOpen
 	    || IsPlayerInStore() || qtextflag || gmenu_is_active();
 }
+// f2v59: hablando con un aldeano (tiendas, textos) se queda el panel pequeno, no el de PC
+bool N64UiStoreOnly()
+{
+	return N64UiMode && !(invflag || CharFlag || SpellbookFlag || QuestLogIsOpen || SpellSelectFlag || IsStashOpen || IsVisualStoreOpen || gmenu_is_active());
+}
 void N64UpdateUiMode()
 {
 	const bool want = gnScreenWidth < 640 && N64WantUiMode();
@@ -218,7 +224,12 @@ void N64UpdateUiMode()
 		N64FreeOverlay();
 	if (N64UiMode)
 		n64_overlay_attach(static_cast<uint8_t *>(n64OverlaySurface->pixels), n64OverlaySurface->pitch);
-	n64_panel_visible(N64UiMode ? 0 : 1);
+	n64_panel_visible(N64UiMode && !N64UiStoreOnly() ? 0 : 1);
+	static bool n64StoreOnlySeen = false;
+	if (N64UiStoreOnly() != n64StoreOnlySeen) {
+		n64StoreOnlySeen = N64UiStoreOnly();
+		RedrawEverything(); // el panel cambia de capa
+	}
 }
 Surface N64UiOut(const Surface &out)
 {
@@ -1788,20 +1799,9 @@ void DrawView(const Surface &out, Point startPosition)
 		}
 		if (!(N64UiMode && gmenu_is_active())) {
 			// f2v56: texto del cuadro en su capa (a tamano del juego) salvo en el modo interfaz
-			static SDL_Surface *n64InfoSurf = nullptr;
-			static Surface n64InfoOut;
 			n64_infotext_show(0);
-			if (!N64UiMode && panelOut.surface != out.surface) {
-				if (n64InfoSurf == nullptr) {
-					n64InfoSurf = SDL_CreateRGBSurface(0, 160, 36, 8, 0, 0, 0, 0);
-					if (n64InfoSurf != nullptr)
-						n64_infotext_attach(static_cast<uint8_t *>(n64InfoSurf->pixels), n64InfoSurf->pitch, 160, 36);
-				}
-				if (n64InfoSurf != nullptr) {
-					n64InfoOut = Surface(n64InfoSurf);
-					N64InfoTextOut = &n64InfoOut;
-				}
-			}
+			if (panelOut.surface != out.surface && panelOut.surface != n64OverlaySurface)
+				N64InfoTextOut = &panelOut; // f2v59: solo como marca (el texto lo escribe el RDP)
 			DrawInfoBox(panelOut);
 			N64InfoTextOut = nullptr;
 			UpdateLifeManaPercent(); // Update life/mana totals before rendering any portion of the flask.

@@ -55,6 +55,10 @@
 #include <emscripten.h>
 #endif
 
+#ifdef __N64__
+#include <dir.h>
+#endif
+
 namespace devilution {
 
 #define PASSWORD_SPAWN_SINGLE "adslhfb1"
@@ -772,12 +776,41 @@ bool pfile_ui_save_create(_uiheroinfo *heroinfo)
 	return true;
 }
 
+#ifdef __N64__
+// f2v59: el guardado es una carpeta (single_N_sv/) y RemoveFile no borra carpetas: se borran
+// sus archivos y luego la carpeta
+void N64RemoveSaveDir(std::string dir)
+{
+	while (!dir.empty() && (dir.back() == '/' || dir.back() == '\\'))
+		dir.pop_back();
+	std::vector<std::string> names;
+	dir_t d;
+	int r = dir_findfirst(dir.c_str(), &d);
+	while (r == 0) {
+		if (d.d_type != DT_DIR)
+			names.emplace_back(d.d_name);
+		r = dir_findnext(dir.c_str(), &d);
+	}
+	for (const std::string &n : names) {
+		const std::string p = dir + "/" + n;
+		const int rr = remove(p.c_str());
+		LogVerbose("N64: borrar {} -> {}", p, rr);
+	}
+	const int rd = remove(dir.c_str());
+	LogVerbose("N64: borrar carpeta {} ({} archivos) -> {}", dir, names.size(), rd);
+}
+#endif
+
 bool pfile_delete_save(_uiheroinfo *heroInfo)
 {
 	const uint32_t saveNum = heroInfo->saveNumber;
 	if (saveNum < MAX_CHARACTERS) {
 		hero_names[saveNum][0] = '\0';
+#ifdef __N64__
+		N64RemoveSaveDir(GetSavePath(saveNum));
+#else
 		RemoveFile(GetSavePath(saveNum).c_str());
+#endif
 	}
 	return true;
 }
