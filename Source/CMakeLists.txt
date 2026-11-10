@@ -892,7 +892,24 @@ target_link_dependencies(libdevilutionx_utf8 PUBLIC
   libdevilutionx_sheen_bidi
 )
 
-if(NOSOUND)
+if(NOSOUND AND N64)
+  # f2v48: N64 con efectos y voces reales (effects.cpp) y la capa propia de sonido (sound_stubs.cpp)
+  add_devilutionx_object_library(libdevilutionx_sound
+    effects.cpp
+    engine/sound_stubs.cpp
+  )
+  target_link_dependencies(libdevilutionx_sound PUBLIC
+    DevilutionX::SDL
+    magic_enum::magic_enum
+    tl
+    unordered_dense::unordered_dense
+    libdevilutionx_options
+    libdevilutionx_random
+    libdevilutionx_sdl2_to_1_2_backports
+    PRIVATE
+    libdevilutionx_game_mode
+  )
+elseif(NOSOUND)
   add_devilutionx_object_library(libdevilutionx_sound
     effects_stubs.cpp
     engine/sound_stubs.cpp

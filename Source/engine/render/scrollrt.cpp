@@ -3,6 +3,9 @@
  *
  * Implementation of functionality for rendering the dungeons, monsters and calling other render routines.
  */
+#include <cstring>
+#include <memory>
+#include <new>
 #include "engine/render/scrollrt.h"
 
 #include <cmath>
@@ -126,8 +129,25 @@ Surface N64PanelOut(const Surface &out)
 }
 } // namespace
 // N64 (f2v39): se suelta la capa del panel al cargar un nivel (se vuelve a crear al dibujar)
+// f2v48: copia del suelo ya dibujado. Si la camara no se mueve y no cambia nada de lo que usa el
+// suelo (luz, piezas, ventana), se copia en vez de volver a dibujarlo (f2v47 MEDIDO: suelo ~20 ms).
+extern "C" int n64_heap_free_kib(void);
+std::unique_ptr<uint8_t[]> N64FloorSave;
+size_t N64FloorSaveSize = 0;
+uint32_t N64FloorKey = 0;
+bool N64FloorValid = false;
+uint32_t N64FloorLastKey = 1;
+unsigned N64FloorReused = 0;
+unsigned N64FloorDrawn = 0;
+void N64FreeFloorSave()
+{
+	N64FloorSave = nullptr;
+	N64FloorSaveSize = 0;
+	N64FloorValid = false;
+}
 void N64FreePanelLayer()
 {
+	N64FreeFloorSave();
 	if (n64PanelSurface != nullptr) {
 		n64_panel_attach(nullptr, 0, 0, 0);
 		SDL_FreeSurface(n64PanelSurface);
@@ -834,7 +854,13 @@ void DrawDungeon(const Surface &out, const Lightmap &lightmap, Point tilePositio
 	assert(InDungeonBounds(tilePosition));
 	const int lightTableIndex = dLight[tilePosition.x][tilePosition.y];
 
+#ifdef __N64__
+	const unsigned n64C0 = n64_us();
 	DrawCell(out, lightmap, tilePosition, targetBufferPosition, lightTableIndex);
+	n64_prof_add(29, n64_us() - n64C0); // f2v48: paredes (piezas de la casilla)
+#else
+	DrawCell(out, lightmap, tilePosition, targetBufferPosition, lightTableIndex);
+#endif
 
 	const int8_t bDead = dCorpse[tilePosition.x][tilePosition.y];
 	const int8_t bMap = dTransVal[tilePosition.x][tilePosition.y];
@@ -1331,7 +1357,66 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 
 #ifdef __N64__
 	const unsigned n64F0 = n64_us();
-	DrawFloor(out, lightmap, position, Point {} + offset, rows, columns);
+	{
+		// clave de todo lo que lee DrawFloor (mismo recorrido de casillas)
+		uint32_t h = 2166136261U;
+		auto mix = [&h](uint32_t v) { h = (h ^ v) * 16777619U; };
+		mix(static_cast<uint32_t>(position.x) | (static_cast<uint32_t>(position.y) << 16));
+		mix(static_cast<uint32_t>(offset.deltaX & 0xFFFF) | (static_cast<uint32_t>(offset.deltaY & 0xFFFF) << 16));
+		mix(static_cast<uint32_t>(rows) | (static_cast<uint32_t>(columns) << 16));
+		mix(static_cast<uint32_t>(out.w()) | (static_cast<uint32_t>(out.h()) << 16));
+		mix(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(out.at(0, 0))));
+		mix(static_cast<uint32_t>(N64OccX0) ^ (static_cast<uint32_t>(N64OccY0) << 8) ^ (static_cast<uint32_t>(N64OccX1) << 16) ^ (static_cast<uint32_t>(N64OccY1) << 24));
+		mix(static_cast<uint32_t>(currlevel) | (static_cast<uint32_t>(leveltype) << 8) | (static_cast<uint32_t>(setlevel) << 16));
+		Point tp = position;
+		int cols = columns;
+		for (int i = 0; i < rows; i++) {
+			for (int j = 0; j < cols; j++, tp += Direction::East) {
+				if (!InDungeonBounds(tp))
+					continue;
+				mix(static_cast<uint32_t>(dPiece[tp.x][tp.y]) | (static_cast<uint32_t>(dLight[tp.x][tp.y]) << 16));
+			}
+			tp += Displacement(Direction::West) * cols;
+			if ((i & 1) != 0) {
+				tp.x++;
+				cols--;
+			} else {
+				tp.y++;
+				cols++;
+			}
+		}
+		const size_t need = static_cast<size_t>(out.w()) * static_cast<size_t>(out.h());
+		if (N64FloorValid && h == N64FloorKey && N64FloorSaveSize == need) {
+			for (int y = 0; y < out.h(); y++)
+				memcpy(out.at(0, y), &N64FloorSave[static_cast<size_t>(y) * out.w()], static_cast<size_t>(out.w()));
+			N64FloorReused++;
+			n64_prof_add(27, 1);
+		} else {
+			DrawFloor(out, lightmap, position, Point {} + offset, rows, columns);
+			N64FloorDrawn++;
+			n64_prof_add(28, 1);
+			N64FloorValid = false;
+			// se guarda solo si la clave se repite (camara quieta): andando no se gasta en copiar
+			if (h == N64FloorLastKey) {
+				if (N64FloorSaveSize != need) {
+					N64FloorSave = nullptr;
+					N64FloorSaveSize = 0;
+					if (n64_heap_free_kib() > static_cast<int>(need / 1024) + 400) {
+						N64FloorSave = std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[need]);
+						if (N64FloorSave != nullptr)
+							N64FloorSaveSize = need;
+					}
+				}
+				if (N64FloorSave != nullptr) {
+					for (int y = 0; y < out.h(); y++)
+						memcpy(&N64FloorSave[static_cast<size_t>(y) * out.w()], out.at(0, y), static_cast<size_t>(out.w()));
+					N64FloorKey = h;
+					N64FloorValid = true;
+				}
+			}
+		}
+		N64FloorLastKey = h;
+	}
 	const unsigned n64F1 = n64_us();
 	n64_prof_add(3, n64F1 - n64F0);
 	DrawTileContent(out, lightmap, position, Point {} + offset, rows, columns);

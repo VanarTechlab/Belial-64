@@ -46,6 +46,25 @@ struct TSnd {
 	{
 		return DSB.IsPlaying();
 	}
+#elif defined(__N64__)
+	// f2v48: sonido de la N64 (sdl_n64.c): el WAV se copia a la memoria del cartucho la primera vez
+	// que suena y el mezclador de libdragon lo lee de alli. Imita lo que effects.cpp usa de SoundSample.
+	struct N64Sample {
+		std::string rel;          // ruta dentro del diabdat ("sfx\\misc\\walk1.wav")
+		mutable std::string path; // ruta completa en la SD (se busca la primera vez que suena)
+		mutable int8_t state = 0; // 0 = sin buscar, 1 = existe, -1 = no existe
+		const char *Resolve() const;
+		[[nodiscard]] bool IsLoaded() const { return state >= 0; }
+		[[nodiscard]] bool IsPlaying() const;
+		void Stop();
+		void PlayWithVolumeAndPan(int logVolume, int logUserVolume, int logPan);
+		[[nodiscard]] int GetLength() const { return 0; }
+	} DSB;
+
+	bool isPlaying()
+	{
+		return DSB.IsPlaying();
+	}
 #else
 	bool isPlaying()
 	{

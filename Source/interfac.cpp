@@ -620,13 +620,8 @@ extern "C" void n64_audio_pump(void);
 void IncProgress(uint32_t steps)
 {
 #ifdef __N64__
-	// f2v46: para encontrar donde se cuelga la carga, cada paso queda escrito en la SD
-	{
-		static unsigned n64Step;
-		n64_log("carga: paso %u (llamado desde %p)", ++n64Step, __builtin_return_address(0));
-		n64_log_flush();
-		n64_audio_pump();
-	}
+	// f2v48: los pasos ya no se escriben en la SD (f2v46-47: sin cuelgues); se sigue rellenando el sonido
+	n64_audio_pump();
 #endif
 	if (!IsProgress)
 		return;
