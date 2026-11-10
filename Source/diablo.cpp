@@ -223,13 +223,27 @@ void FreeGame()
 	music_stop();
 }
 
+#ifdef __N64__
+extern "C" unsigned n64_us(void);
+extern "C" void n64_prof_add(int which, unsigned us);
+#endif
 bool ProcessInput()
 {
 	if (PauseMode == 2) {
 		return false;
 	}
 
+#ifdef __N64__
+	unsigned n64Ti = n64_us();
+#endif
 	plrctrls_every_frame();
+#ifdef __N64__
+	{
+		const unsigned n = n64_us();
+		n64_prof_add(24, n - n64Ti);
+		n64Ti = n;
+	}
+#endif
 
 	if (!gbIsMultiplayer && gmenu_is_active()) {
 		RedrawViewport();
@@ -241,8 +255,21 @@ bool ProcessInput()
 		FinishSimulatedMouseClicks(MousePosition);
 #endif
 		CheckCursMove();
+#ifdef __N64__
+		{
+			const unsigned n = n64_us();
+			n64_prof_add(25, n - n64Ti);
+			n64Ti = n;
+		}
+#endif
 		plrctrls_after_check_curs_move();
+#ifdef __N64__
+		n64Ti = n64_us();
+#endif
 		RepeatPlayerAction();
+#ifdef __N64__
+		n64_prof_add(26, n64_us() - n64Ti);
+#endif
 	}
 
 	return true;

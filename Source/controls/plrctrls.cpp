@@ -60,6 +60,11 @@
 
 namespace devilution {
 
+#ifdef __N64__
+extern "C" unsigned n64_us(void);
+extern "C" void n64_prof_add(int which, unsigned us);
+#endif
+
 GameActionType ControllerActionHeld = GameActionType_NONE;
 
 bool StandToggle = false;
@@ -324,6 +329,25 @@ void FindMeleeTarget()
 	size_t tail = 0;
 
 	const Player &myPlayer = *MyPlayer;
+
+	// f2v47: la busqueda solo puede encontrar monstruos a 26 casillas o menos (cada paso avanza
+	// como mucho una casilla). Si no hay ninguno tan cerca, el resultado es "ninguno": no se busca.
+	// (f2v46 MEDIDO: la entrada seguia en 6-9 ms por tic en la mazmorra sin enemigos cerca.)
+	{
+		const Point p = myPlayer.position.future;
+		bool anyNear = false;
+		for (size_t i = 0; i < ActiveMonsterCount && !anyNear; i++) {
+			const Monster &m = Monsters[ActiveMonsters[i]];
+			for (const Point q : { Point(m.position.tile), Point(m.position.future), Point(m.position.old) }) {
+				if (std::abs(q.x - p.x) <= 27 && std::abs(q.y - p.y) <= 27) {
+					anyNear = true;
+					break;
+				}
+			}
+		}
+		if (!anyNear)
+			return;
+	}
 
 	{
 		const int startX = myPlayer.position.future.x;
@@ -2385,9 +2409,21 @@ void plrctrls_after_check_curs_move()
 	}
 	if (!invflag) {
 		InfoString = StringOrView {};
+#ifdef __N64__
+		unsigned n64T = n64_us();
+		FindActor();
+		unsigned n64T2 = n64_us();
+		n64_prof_add(21, n64T2 - n64T);
+		FindItemOrObject();
+		n64T = n64_us();
+		n64_prof_add(22, n64T - n64T2);
+		FindTrigger();
+		n64_prof_add(23, n64_us() - n64T);
+#else
 		FindActor();
 		FindItemOrObject();
 		FindTrigger();
+#endif
 	}
 }
 
