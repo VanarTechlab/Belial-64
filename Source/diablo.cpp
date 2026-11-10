@@ -2296,7 +2296,11 @@ void InitPadmapActions()
 	    "SpellAction",
 	    N_("Spell action"),
 	    N_("Cast the active spell."),
+#ifdef __N64__ // N64 (f2v45): B lanza el hechizo asignado (si hay un panel abierto, B lo cierra)
+	    ControllerButton_BUTTON_A,
+#else
 	    ControllerButton_BUTTON_X,
+#endif
 	    [] {
 		    ControllerActionHeld = GameActionType_CAST_SPELL;
 		    LastPlayerAction = PlayerActionType::None;
@@ -2306,7 +2310,11 @@ void InitPadmapActions()
 		    ControllerActionHeld = GameActionType_NONE;
 		    LastPlayerAction = PlayerActionType::None;
 	    },
+#ifdef __N64__
+	    []() { return CanPlayerTakeAction() && !InGameMenu() && !(DoomFlag || SpellSelectFlag || invflag || SpellbookFlag || QuestLogIsOpen || CharFlag); });
+#else
 	    []() { return CanPlayerTakeAction() && !InGameMenu(); });
+#endif
 	options.Padmapper.AddAction(
 	    "CancelAction",
 	    N_("Cancel action"),
@@ -2391,7 +2399,7 @@ void InitPadmapActions()
 	    "UseHealthPotion",
 	    N_("Use health potion"),
 	    N_("Use health potions from belt."),
-	    ControllerButton_BUTTON_LEFTSHOULDER,
+	    ControllerButton_BUTTON_LEFTSHOULDER, // N64 (f2v45): Z
 	    [] { UseBeltItem(BeltItemType::Healing); },
 	    nullptr,
 	    CanPlayerTakeAction);
@@ -2445,7 +2453,11 @@ void InitPadmapActions()
 	    "QuestLog",
 	    N_("Quest log"),
 	    N_("Open Quest log."),
+#ifdef __N64__ // N64 (f2v45): C-arriba abre las misiones (ya no hay boton Back)
+	    ControllerButton_AXIS_TRIGGERLEFT,
+#else
 	    { ControllerButton_BUTTON_BACK, ControllerButton_AXIS_TRIGGERLEFT },
+#endif
 	    [] {
 		    ProcessGameAction(GameAction { GameActionType_TOGGLE_QUEST_LOG });
 	    },
@@ -2474,7 +2486,11 @@ void InitPadmapActions()
 	    "DisplaySpells",
 	    N_("Speedbook"),
 	    N_("Open Speedbook."),
+#ifdef __N64__ // N64 (f2v45): L abre la lista rapida de hechizos (para elegir el de B)
+	    ControllerButton_BUTTON_LEFTSTICK,
+#else
 	    ControllerButton_BUTTON_A,
+#endif
 	    [] {
 		    ProcessGameAction(GameAction { GameActionType_TOGGLE_QUICK_SPELL_MENU });
 	    },

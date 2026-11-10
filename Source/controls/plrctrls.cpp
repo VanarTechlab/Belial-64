@@ -649,6 +649,18 @@ void Interact()
 		LastPlayerAction = PlayerActionType::OperateObject;
 		return;
 	}
+#ifdef __N64__
+	// N64 (f2v45): A ataca siempre, aunque no haya nadie cerca (hacia donde mira el personaje o
+	// hacia donde se empuja la palanca), como "quedarse quieto y atacar"
+	if (leveltype != DTYPE_TOWN) {
+		Direction pdir = myPlayer._pdir;
+		const AxisDirection moveDir = GetMoveDirection();
+		if (moveDir.x != AxisDirectionX_NONE || moveDir.y != AxisDirectionY_NONE)
+			pdir = FaceDir[static_cast<std::size_t>(moveDir.x)][static_cast<std::size_t>(moveDir.y)];
+		NetSendCmdLoc(MyPlayerId, true, myPlayer.UsesRangedWeapon() ? CMD_RATTACKXY : CMD_SATTACKXY, myPlayer.position.tile + pdir);
+		LastPlayerAction = PlayerActionType::Attack;
+	}
+#endif
 }
 
 void AttrIncBtnSnap(AxisDirection dir)
