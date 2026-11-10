@@ -2966,6 +2966,9 @@ int DiabloMain(int argc, char **argv)
 	GetOptions().Graphics.perPixelLighting.SetValue(false);
 	GetOptions().Gameplay.autoGoldPickup.SetValue(true);
 	GetOptions().Gameplay.autoRefillBelt.SetValue(true);
+	// f2v69: al arrancar siempre logo, intro, pantalla de titulo y menu principal
+	GetOptions().StartUp.splash.SetValue(StartUpSplash::LogoAndTitleDialog);
+	GetOptions().StartUp.diabloIntro.SetValue(StartUpIntro::On);
 #endif
 	if (demo::IsRunning()) demo::OverrideOptions();
 
