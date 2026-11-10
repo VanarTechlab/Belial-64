@@ -3563,6 +3563,7 @@ void n64_mon_read(void *dst, uint32_t addr, uint32_t len);
 void n64_mon_level_begin(void);
 void n64_mon_cache_release(void);
 void n64_mon_log(void);
+void n64_log_flush(void);
 }
 namespace {
 static_assert(sizeof(uintptr_t) == 4, "cabecera de 8 bytes: direccion + paleta");
@@ -3723,6 +3724,7 @@ bool N64LoadMonsterGFXFromCart(CMonster &monsterType)
 		monsterType.anims[i].sprites = result[i];
 	monsterType.animData = std::unique_ptr<std::byte[]> { new std::byte[1] };
 	LogVerbose("N64: monstruo {} en el cartucho (cabeceras {} bytes)", monsterData.spritePath(), N64HdrUsed - arenaMark);
+	n64_log_flush();
 	return true;
 }
 } // namespace
@@ -3783,6 +3785,7 @@ bool N64LoadPlayerSheetFromCart(const char *assetPath, const uint8_t *trnA, cons
 	outHeader = std::move(header);
 	outNumLists = static_cast<uint16_t>(numLists);
 	LogVerbose("N64: jugador {} en el cartucho (hueco {}, {} bytes)", assetPath, slot, N64PlrSlotUsed);
+	n64_log_flush();
 	return true;
 }
 #endif

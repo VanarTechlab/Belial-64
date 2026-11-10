@@ -612,8 +612,22 @@ void interface_msg_pump()
 	}
 }
 
+#ifdef __N64__
+extern "C" void n64_log(const char *fmt, ...);
+extern "C" void n64_log_flush(void);
+extern "C" void n64_audio_pump(void);
+#endif
 void IncProgress(uint32_t steps)
 {
+#ifdef __N64__
+	// f2v46: para encontrar donde se cuelga la carga, cada paso queda escrito en la SD
+	{
+		static unsigned n64Step;
+		n64_log("carga: paso %u (llamado desde %p)", ++n64Step, __builtin_return_address(0));
+		n64_log_flush();
+		n64_audio_pump();
+	}
+#endif
 	if (!IsProgress)
 		return;
 	const uint32_t prevProgress = sgdwProgress;
