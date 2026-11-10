@@ -332,6 +332,9 @@ void gamemenu_load_game(bool /*bActivate*/)
 	SetEventHandler(saveProc);
 }
 
+#ifdef __N64__
+extern "C" void n64_cel_cache_release(void);
+#endif
 void gamemenu_save_game(bool /*bActivate*/)
 {
 	if (pcurs != CURSOR_HAND) {
@@ -350,6 +353,12 @@ void gamemenu_save_game(bool /*bActivate*/)
 	RedrawEverything();
 	DrawAndBlit();
 	const uint32_t currentTime = SDL_GetTicks();
+#ifdef __N64__
+	// f2v60: guardar pide un bloque de ~320 KiB seguido; en el pueblo no lo habia (478 KiB libres pero
+	// troceados -> std::bad_alloc y se colgaba en "Saving..."). Se suelta la cache de CEL (~464 KiB,
+	// se vuelve a pedir al dibujar el siguiente fotograma, como al cargar un nivel)
+	n64_cel_cache_release();
+#endif
 	SaveGame();
 	ClrDiabloMsg();
 #ifdef __N64__
