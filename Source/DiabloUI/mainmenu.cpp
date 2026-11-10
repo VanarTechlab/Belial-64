@@ -83,6 +83,13 @@ void MainmenuLoad(const char *name)
 
 	vecMainMenuDialog.push_back(std::make_unique<UiList>(vecMenuItems, vecMenuItems.size(), uiPosition.x + 64, (uiPosition.y + 192), 510, 43, UiFlags::FontSize42 | UiFlags::ColorUiGold | UiFlags::AlignCenter, 5));
 
+#ifdef __N64__
+	{
+		// f2v71: autor del port
+		const SDL_Rect rectAuthor = { (Sint16)(uiPosition.x), (Sint16)(uiPosition.y + 412), 640, 30 };
+		vecMainMenuDialog.push_back(std::make_unique<UiArtText>(_("By Vanar").data(), rectAuthor, UiFlags::FontSize24 | UiFlags::ColorUiSilver | UiFlags::AlignCenter));
+	}
+#endif
 	const SDL_Rect rect2 = { 17, (Sint16)(gnScreenHeight - 36), 605, 21 };
 	vecMainMenuDialog.push_back(std::make_unique<UiArtText>(name, rect2, UiFlags::FontSize12 | UiFlags::ColorUiSilverDark));
 
