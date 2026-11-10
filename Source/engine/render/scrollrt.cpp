@@ -145,9 +145,53 @@ void N64FreeFloorSave()
 	N64FloorSaveSize = 0;
 	N64FloorValid = false;
 }
+// f2v50: capa aparte de 640x480 para el texto de las misiones y las tiendas (hechos para 640x480).
+// El RDP la reduce a toda la pantalla encima del mundo (el indice 0 es transparente). Asi el juego
+// sigue a su resolucion (f2v49 cambiaba a 640x480 y la vista se alejaba).
+extern "C" void n64_overlay_attach(uint8_t *pixels, int pitch);
+extern Rectangle UIRectangle;
+extern bool N64OverlayDrawing;
+SDL_Surface *n64OverlaySurface;
+void N64FreeOverlay()
+{
+	if (n64OverlaySurface != nullptr) {
+		n64_overlay_attach(nullptr, 0);
+		SDL_FreeSurface(n64OverlaySurface);
+		n64OverlaySurface = nullptr;
+	}
+}
+bool N64DrawOverlay(bool store, bool qtext)
+{
+	if (!store && !qtext) {
+		N64FreeOverlay();
+		return true;
+	}
+	if (gnScreenWidth >= 640)
+		return false; // a 640x480 se dibuja como siempre
+	if (n64OverlaySurface == nullptr) {
+		N64FreeFloorSave(); // deja sitio
+		n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
+		if (n64OverlaySurface == nullptr)
+			return false;
+	}
+	memset(n64OverlaySurface->pixels, 0, static_cast<size_t>(n64OverlaySurface->pitch) * 480);
+	const Surface ovl(n64OverlaySurface);
+	const Rectangle saved = UIRectangle;
+	UIRectangle = { { 0, 0 }, { 640, 480 } };
+	N64OverlayDrawing = true;
+	if (store && !qtext)
+		DrawSText(ovl);
+	if (qtext)
+		DrawQText(ovl);
+	N64OverlayDrawing = false;
+	UIRectangle = saved;
+	n64_overlay_attach(static_cast<uint8_t *>(n64OverlaySurface->pixels), n64OverlaySurface->pitch);
+	return true;
+}
 void N64FreePanelLayer()
 {
 	N64FreeFloorSave();
+	N64FreeOverlay();
 	if (n64PanelSurface != nullptr) {
 		n64_panel_attach(nullptr, 0, 0, 0);
 		SDL_FreeSurface(n64PanelSurface);
@@ -1538,8 +1582,14 @@ void DrawView(const Surface &out, Point startPosition)
 	DrawMonsterHealthBar(out);
 	DrawFloatingNumbers(out, startPosition, offset);
 
+#ifdef __N64__
+	const bool n64OverlayDone = N64DrawOverlay(IsPlayerInStore(), qtextflag);
+	if (!n64OverlayDone && IsPlayerInStore() && !qtextflag)
+		DrawSText(out);
+#else
 	if (IsPlayerInStore() && !qtextflag)
 		DrawSText(out);
+#endif
 	if (invflag) {
 		DrawInv(out);
 	} else if (SpellbookFlag) {
@@ -1563,7 +1613,11 @@ void DrawView(const Surface &out, Point startPosition)
 	if (ShowUniqueItemInfoBox) {
 		DrawUniqueInfo(out);
 	}
+#ifdef __N64__
+	if (qtextflag && !n64OverlayDone) {
+#else
 	if (qtextflag) {
+#endif
 		DrawQText(out);
 	}
 	if (SpellSelectFlag) {

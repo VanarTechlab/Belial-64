@@ -1,5 +1,6 @@
 #include "engine/render/primitive_render.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -160,8 +161,29 @@ void DrawHalfTransparentVerticalLine(const Surface &out, Point from, int height,
 	}
 }
 
+#ifdef __N64__
+// f2v50: en la capa de 640x480 de la N64 no hay nada debajo con que mezclar: se dibuja una trama
+// de negro y transparente (indice 0) que el filtro del RDP convierte en un oscurecido del 50 %
+bool N64OverlayDrawing = false;
+extern "C" int n64_overlay_black(void);
+#endif
 void DrawHalfTransparentRectTo(const Surface &out, int sx, int sy, int width, int height)
 {
+#ifdef __N64__
+	if (N64OverlayDrawing) {
+		const int x0 = std::max(sx, 0);
+		const int y0 = std::max(sy, 0);
+		const int x1 = std::min(sx + width, out.w());
+		const int y1 = std::min(sy + height, out.h());
+		const auto black = static_cast<uint8_t>(n64_overlay_black());
+		for (int y = y0; y < y1; y++) {
+			uint8_t *dst = out.at(0, y);
+			for (int x = x0 + ((x0 + y) & 1); x < x1; x += 2)
+				dst[x] = black;
+		}
+		return;
+	}
+#endif
 	if (sx + width < 0)
 		return;
 	if (sy + height < 0)

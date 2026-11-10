@@ -995,11 +995,6 @@ void RunGameLoop(interface_mode uMsg)
 		n64_prof_add(0, n64_us() - n64T0);
 #endif
 		gbGameLoopStartup = false;
-#ifdef __N64__
-		// f2v49: el texto de las misiones y las tiendas estan hechos para 640x480; mientras se ven,
-		// el juego pasa a 640x480 (a 400x300 se salian de la pantalla y pisaban memoria: pantalla azul)
-		N64UseOverlayResolution(qtextflag || IsPlayerInStore());
-#endif
 		if (drawGame)
 			DrawAndBlit();
 #ifdef GPERF_HEAP_FIRST_GAME_ITERATION
