@@ -279,8 +279,16 @@ void gmenu_draw(const Surface &out)
 		}
 		const int uiPositionY = GetUIRectangle().position.y;
 		const ClxSprite sprite = (*sgpLogo)[LogoAnim_frame];
+#ifdef __N64__
+		// f2v53: el panel se oculta con el menu abierto; el logo arriba del todo y el menu debajo
+		// (a 400x300 el logo quedaba por encima de la pantalla)
+		const int n64LogoBottom = gnScreenHeight >= 480 ? 102 + uiPositionY : sprite.height() + 4;
+		ClxDraw(out, { (gnScreenWidth - sprite.width()) / 2, n64LogoBottom }, sprite);
+		int y = gnScreenHeight >= 480 ? 110 + uiPositionY : n64LogoBottom + 8;
+#else
 		ClxDraw(out, { (gnScreenWidth - sprite.width()) / 2, 102 + uiPositionY }, sprite);
 		int y = 110 + uiPositionY;
+#endif
 		TMenuItem *i = sgpCurrentMenu;
 		if (sgpCurrentMenu->fnMenu != nullptr) {
 			while (i->fnMenu != nullptr) {

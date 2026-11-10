@@ -98,6 +98,7 @@ extern "C" unsigned n64_us(void);
 extern "C" void n64_prof_add(int which, unsigned us);
 extern "C" void n64_panel_attach(uint8_t *pixels, int pitch, int rows, int panelRow);
 extern "C" void n64_panel_frame(void);
+extern "C" void n64_panel_visible(int visible);
 extern "C" unsigned n64_panel_serial(void);
 extern "C" int n64_panel_occluder(int *x0, int *y0, int *x1, int *y1);
 void CalculatePanelAreas();
@@ -132,7 +133,13 @@ Surface N64PanelOut(const Surface &out)
 // f2v48: copia del suelo ya dibujado. Si la camara no se mueve y no cambia nada de lo que usa el
 // suelo (luz, piezas, ventana), se copia en vez de volver a dibujarlo (f2v47 MEDIDO: suelo ~20 ms).
 extern "C" int n64_heap_free_kib(void);
-std::unique_ptr<uint8_t[]> N64FloorSave;
+extern "C" int n64_rdp_copy8(uint8_t *dst, int dpitch, const uint8_t *src, int spitch, int w, int h);
+extern "C" int n64_rdp_fill8(uint8_t *dst, int dpitch, int w, int h, int value);
+extern "C" void *memalign(size_t align, size_t size);
+struct N64FreeDeleter {
+	void operator()(uint8_t *p) const { free(p); }
+};
+std::unique_ptr<uint8_t[], N64FreeDeleter> N64FloorSave; // f2v53: alineado a 64 para el RDP
 size_t N64FloorSaveSize = 0;
 uint32_t N64FloorKey = 0;
 bool N64FloorValid = false;
@@ -1430,11 +1437,23 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 		}
 		const size_t need = static_cast<size_t>(out.w()) * static_cast<size_t>(out.h());
 		if (N64FloorValid && h == N64FloorKey && N64FloorSaveSize == need) {
-			for (int y = 0; y < out.h(); y++)
-				memcpy(out.at(0, y), &N64FloorSave[static_cast<size_t>(y) * out.w()], static_cast<size_t>(out.w()));
+			// f2v53: lo copia el RDP (~1 ms; con la CPU eran ~10 ms)
+			if (n64_rdp_copy8(out.at(0, 0), out.pitch(), N64FloorSave.get(), out.w(), out.w(), out.h()) == 0) {
+				for (int y = 0; y < out.h(); y++)
+					memcpy(out.at(0, y), &N64FloorSave[static_cast<size_t>(y) * out.w()], static_cast<size_t>(out.w()));
+			}
 			N64FloorReused++;
 			n64_prof_add(27, 1);
 		} else {
+			// f2v53: si se va a guardar, antes se borra la imagen: lo que no es suelo quedaba con
+			// restos del fotograma anterior (con el doble bufer, de dos antes) y se guardaba con el
+			// suelo; asi el mensaje "Game saved" no se iba mientras el personaje estaba quieto
+			if (h == N64FloorLastKey) {
+				if (n64_rdp_fill8(out.at(0, 0), out.pitch(), out.w(), out.h(), 0) == 0) {
+					for (int y = 0; y < out.h(); y++)
+						memset(out.at(0, y), 0, static_cast<size_t>(out.w()));
+				}
+			}
 			DrawFloor(out, lightmap, position, Point {} + offset, rows, columns);
 			N64FloorDrawn++;
 			n64_prof_add(28, 1);
@@ -1445,14 +1464,16 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 					N64FloorSave = nullptr;
 					N64FloorSaveSize = 0;
 					if (n64_heap_free_kib() > static_cast<int>(need / 1024) + 400) {
-						N64FloorSave = std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[need]);
+						N64FloorSave.reset(static_cast<uint8_t *>(memalign(64, need)));
 						if (N64FloorSave != nullptr)
 							N64FloorSaveSize = need;
 					}
 				}
 				if (N64FloorSave != nullptr) {
-					for (int y = 0; y < out.h(); y++)
-						memcpy(&N64FloorSave[static_cast<size_t>(y) * out.w()], out.at(0, y), static_cast<size_t>(out.w()));
+					if (n64_rdp_copy8(N64FloorSave.get(), out.w(), out.at(0, 0), out.pitch(), out.w(), out.h()) == 0) {
+						for (int y = 0; y < out.h(); y++)
+							memcpy(&N64FloorSave[static_cast<size_t>(y) * out.w()], out.at(0, y), static_cast<size_t>(out.w()));
+					}
 					N64FloorKey = h;
 					N64FloorValid = true;
 				}
@@ -2119,6 +2140,7 @@ void DrawAndBlit()
 		}
 	}
 	const Surface panelOut = N64PanelOut(out);
+	n64_panel_visible(gmenu_is_active() ? 0 : 1); // f2v53: sin panel con el menu de START abierto
 	n64_panel_frame();
 	if (panelOut.surface != out.surface && n64_panel_occluder(&N64OccX0, &N64OccY0, &N64OccX1, &N64OccY1))
 		N64OccPixels = out.begin();

@@ -155,11 +155,8 @@ void music_start(_music_id nTrack)
 	sgnMusicTrack = nTrack;
 	if (n64MusicDisabled)
 		return;
-	// N64 (f2v36): sin musica en los menus (copiarla al cartucho tardaba 6-11 s cada vez)
-	if (!N64InGame) {
-		n64_music_stop();
-		return;
-	}
+	// f2v53: vuelve la musica de los menus (preparada en IMA, ~1 MB, se copia ~0,6 s una vez por
+	// encendido a su propio hueco del cartucho). En f2v36 se quito porque el WAV original tardaba 6-11 s.
 	n64_music_volume(n64MusicVolume, n64MusicMuted ? 1 : 0);
 	n64_music_start(N64MusicTracks[nTrack]);
 }
