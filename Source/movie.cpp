@@ -5,6 +5,8 @@
  */
 
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 #ifdef USE_SDL3
 #include <SDL3/SDL_events.h>
@@ -34,16 +36,34 @@ bool movie_playing;
 /** Should the movie play in a loop. */
 bool loop_movie;
 
+#ifdef __N64__
+extern "C" int n64_play_movie(const char *path, int canSkip);
+#endif
 void play_movie(const char *pszMovie, bool userCanClose)
 {
 	if (demo::IsRunning())
 		return;
 #ifdef __N64__
-	// N64 (f2v27): las cinematicas aun no estan hechas (iran desde la SD); reproducirlas con
-	// libsmackerdec pide mas memoria de la que hay y el juego se caia.
-	(void)pszMovie;
-	(void)userCanClose;
-	return;
+	{
+		// f2v64: las cinematicas van convertidas en la SD (MPEG-1 + wav64, sd:/devilutionx/n64/cine/);
+		// libsmackerdec pedia mas memoria de la que hay. Sin el archivo no se reproduce nada.
+		std::string_view name(pszMovie);
+		const size_t slash = name.find_last_of("\\/");
+		if (slash != std::string_view::npos)
+			name.remove_prefix(slash + 1);
+		const size_t dot = name.find_last_of('.');
+		if (dot != std::string_view::npos)
+			name = name.substr(0, dot);
+		std::string path = "sd:/devilutionx/n64/cine/";
+		for (const char c : name)
+			path += static_cast<char>((c >= 'A' && c <= 'Z') ? c + 32 : c);
+		path += ".m1v";
+		sound_disable_music(true);
+		stream_stop();
+		n64_play_movie(path.c_str(), userCanClose ? 1 : 0);
+		sound_disable_music(false);
+		return;
+	}
 #endif
 
 	// Video playback requires the SDL video subsystem, which HeadlessMode
