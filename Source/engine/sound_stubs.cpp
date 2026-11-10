@@ -47,6 +47,12 @@ const char *TSnd::N64Sample::Resolve() const
 	}
 	return state > 0 ? path.c_str() : nullptr;
 }
+extern "C" int n64_sfx_preload(const char *path);
+void TSnd::N64Sample::Preload() const
+{
+	if (Resolve() != nullptr)
+		n64_sfx_preload(path.c_str());
+}
 bool TSnd::N64Sample::IsPlaying() const
 {
 	return state > 0 && n64_sfx_is_playing(path.c_str()) != 0;

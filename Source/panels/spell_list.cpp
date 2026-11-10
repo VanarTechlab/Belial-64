@@ -1,5 +1,6 @@
 #include "panels/spell_list.hpp"
 
+#include <algorithm>
 #include <cstdint>
 
 #include "control/control.hpp"
@@ -19,6 +20,7 @@
 #include "utils/language.h"
 #include "utils/str_cat.hpp"
 #include "utils/utf8.hpp"
+#include "utils/display.h"
 
 #define SPLROWICONLS 10
 
@@ -202,7 +204,18 @@ std::vector<SpellListItem> GetSpellListItems()
 	uint64_t mask;
 	const Point mainPanelPosition = GetMainPanel().position;
 
-	int x = mainPanelPosition.x + 12 + (SPLICONLENGTH * SPLROWICONLS);
+#ifdef __N64__
+	// f2v52: la lista va de derecha a izquierda desde x+572: a 400 de ancho quedaba fuera de la
+	// pantalla. Se centra con las columnas que quepan.
+	const int n64Cols = std::max(1, std::min(SPLROWICONLS, (gnScreenWidth - 8) / SPLICONLENGTH));
+	const int n64Left = (gnScreenWidth - n64Cols * SPLICONLENGTH) / 2;
+	const int rowStart = n64Left + SPLICONLENGTH * (n64Cols - 1);
+	const int rowEnd = n64Left - SPLICONLENGTH;
+#else
+	const int rowStart = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
+	const int rowEnd = mainPanelPosition.x + 12 - SPLICONLENGTH;
+#endif
+	int x = rowStart;
 	int y = mainPanelPosition.y - 17;
 
 	for (auto i : enum_values<SpellType>()) {
@@ -232,15 +245,15 @@ std::vector<SpellListItem> GetSpellListItems()
 			const bool isSelected = (MousePosition.x >= lx && MousePosition.x < lx + SPLICONLENGTH && MousePosition.y >= ly && MousePosition.y < ly + SPLICONLENGTH);
 			spellListItems.emplace_back(SpellListItem { { x, y }, static_cast<SpellType>(i), static_cast<SpellID>(j), isSelected });
 			x -= SPLICONLENGTH;
-			if (x == mainPanelPosition.x + 12 - SPLICONLENGTH) {
-				x = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
+			if (x == rowEnd) {
+				x = rowStart;
 				y -= SPLICONLENGTH;
 			}
 		}
-		if (mask != 0 && x != mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS)
+		if (mask != 0 && x != rowStart)
 			x -= SPLICONLENGTH;
-		if (x == mainPanelPosition.x + 12 - SPLICONLENGTH) {
-			x = mainPanelPosition.x + 12 + SPLICONLENGTH * SPLROWICONLS;
+		if (x == rowEnd) {
+			x = rowStart;
 			y -= SPLICONLENGTH;
 		}
 	}

@@ -59,6 +59,7 @@ struct TSnd {
 		void Stop();
 		void PlayWithVolumeAndPan(int logVolume, int logUserVolume, int logPan);
 		[[nodiscard]] int GetLength() const { return 0; }
+		void Preload() const; // f2v52: copiarlo ya al cartucho (al cargar el nivel)
 	} DSB;
 
 	bool isPlaying()

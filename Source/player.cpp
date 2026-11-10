@@ -2197,7 +2197,9 @@ void InitPlayerGFX(Player &player)
 #ifdef __N64__
 		// N64: solo quieto y andando al entrar; atacar, hechizos, golpe y bloqueo se cargan
 		// la primera vez que se usan (NewPlrAnim llama a LoadPlrGFX). Ahorra ~1,5 MB.
-		if (graphic != player_graphic::Stand && graphic != player_graphic::Walk)
+		// f2v52: las de nuestro personaje van al cartucho (en la RAM solo la cabecera): se cargan
+		// todas al entrar, asi no hay tirones la primera vez que ataca, recibe un golpe, etc.
+		if (graphic != player_graphic::Stand && graphic != player_graphic::Walk && &player != MyPlayer)
 			continue;
 #endif
 		LoadPlrGFX(player, graphic);
