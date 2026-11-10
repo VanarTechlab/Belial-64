@@ -59,6 +59,9 @@ std::vector<MenuAction> GetMenuActions(const SDL_Event &event)
 				menuActions.push_back(MenuAction_BACK);
 				break;
 			case ControllerButton_BUTTON_X:
+#ifdef __N64__
+			case ControllerButton_BUTTON_Y: // f2v58: C izquierda o C derecha borran el personaje
+#endif
 				menuActions.push_back(MenuAction_DELETE);
 				break;
 			case ControllerButton_BUTTON_DPAD_UP:
