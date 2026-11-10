@@ -1488,6 +1488,8 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 		auto tileKey = [](Point t) -> uint32_t {
 			uint32_t k = static_cast<uint32_t>(dPiece[t.x][t.y]) & 0xFFFFU;
 			k |= static_cast<uint32_t>(dLight[t.x][t.y]) << 16;
+			if (!*GetOptions().Graphics.perPixelLighting)
+				return k; // f2v63: con luz por casillas solo cuenta la suya
 			uint32_t nh = 0; // la luz por pixel mezcla la de las casillas vecinas
 			for (int ny = -1; ny <= 1; ny++) {
 				for (int nx = -1; nx <= 1; nx++) {
@@ -1562,9 +1564,15 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 					uint32_t &slot = keyTab[tp.x & 63][tp.y & 63];
 					const uint32_t k = tileKey(tp);
 					if (IsFloor(tp)) {
+						// f2v63: basta con que la parte visible de la casilla estuviera en la imagen movida
+						// (antes se exigia la casilla entera y las del borde se redibujaban siempre)
+						const int vx0 = std::max(0, sp.x);
+						const int vy0 = std::max(0, sp.y - (TILE_HEIGHT - 1));
+						const int vx1 = std::min(fw, sp.x + TILE_WIDTH);
+						const int vy1 = std::min(fh, sp.y + 1);
 						const int x0 = sp.x - sdx;
 						const int y0 = sp.y - (TILE_HEIGHT - 1) - sdy;
-						bool ok = slot == k && x0 >= 0 && y0 >= 0 && x0 + TILE_WIDTH <= fw && y0 + TILE_HEIGHT <= fh;
+						bool ok = slot == k && (vx0 >= vx1 || vy0 >= vy1 || (vx0 >= dx0 && vy0 >= dy0 && vx1 <= dx0 + cw && vy1 <= dy0 + ch));
 						if (ok && occOn && x0 < N64OccX1 && x0 + TILE_WIDTH > N64OccX0 && y0 < N64OccY1 && y0 + TILE_HEIGHT > N64OccY0)
 							ok = false; // estaba bajo el panel: no se dibujo
 						if (!ok) {

@@ -1162,6 +1162,9 @@ bool CanBePlacedOnBelt(const Player &player, const Item &item)
 {
 	return FitsInBeltSlot(item)
 	    && item._itype != ItemType::Gold
+#ifdef __N64__
+	    && !item.isScroll() // f2v63: en el cinturon solo pociones (como en el DSi)
+#endif
 	    && player.CanUseItem(item)
 	    && item.isUsable();
 }

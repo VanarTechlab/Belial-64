@@ -2960,6 +2960,13 @@ int DiabloMain(int argc, char **argv)
 
 	// Read settings including translation next. This will use the presence of fonts.mpq and look for assets in devilutionx.mpq
 	LoadOptions();
+#ifdef __N64__
+	// f2v63: luz por casillas como el Diablo original (mas barata), oro recogido solo al pasar y
+	// cinturon que se rellena solo con las pociones del inventario
+	GetOptions().Graphics.perPixelLighting.SetValue(false);
+	GetOptions().Gameplay.autoGoldPickup.SetValue(true);
+	GetOptions().Gameplay.autoRefillBelt.SetValue(true);
+#endif
 	if (demo::IsRunning()) demo::OverrideOptions();
 
 	// Then look for a voice pack file based on the selected translation
