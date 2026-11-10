@@ -1040,6 +1040,13 @@ void OptionEntryLanguageCode::CheckLanguagesAreInitialized() const
 	const bool haveExtraFonts = HaveExtraFonts();
 
 	// Add well-known supported languages
+#ifdef __N64__
+	// f2v72: Belial 64 solo trae ingles y espanol
+	(void)haveExtraFonts;
+	languages.emplace_back("en", "English");
+	languages.emplace_back("es", "Espa\xc3\xb1ol");
+	return;
+#endif
 	languages.emplace_back("da", "Dansk");
 	languages.emplace_back("de", "Deutsch");
 	languages.emplace_back("et", "Eesti");

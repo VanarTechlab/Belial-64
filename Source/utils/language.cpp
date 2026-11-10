@@ -351,8 +351,14 @@ void LanguageInitialize()
 	translation = { {}, {} };
 	translationKeys = nullptr;
 	translationValues = nullptr;
+#ifdef __N64__
+	forceLocale.clear(); // f2v72: un fallo anterior dejaba el ingles forzado para siempre
+#endif
 
 	const std::string lang(GetLanguageCode());
+#ifdef __N64__
+	LogInfo("Idioma: {}", lang);
+#endif
 
 	if (lang == "en") {
 		// English does not have a translation file.
@@ -385,6 +391,9 @@ void LanguageInitialize()
 			break;
 	}
 	if (!handle.ok()) {
+#ifdef __N64__
+		LogInfo("Idioma: no se encontro {}.gmo en assets (se queda en ingles)", lang);
+#endif
 		// Reset to English, which is always available:
 		forceLocale = "en";
 		GetLocalPluralId = PluralIfNotOne;

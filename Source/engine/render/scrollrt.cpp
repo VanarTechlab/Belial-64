@@ -139,6 +139,7 @@ Surface N64PanelOut(const Surface &out)
 extern "C" int n64_heap_free_kib(void);
 extern "C" int n64_rdp_copy8(uint8_t *dst, int dpitch, const uint8_t *src, int spitch, int w, int h);
 extern "C" int n64_rdp_fill8(uint8_t *dst, int dpitch, int w, int h, int value);
+extern "C" void n64_cel_cache_release(void);
 extern "C" int n64_rdp_blit8(uint8_t *dst, int dpitch, int dh, int dx, int dy, const uint8_t *src, int spitch, int sh, int sx, int sy, int w, int h);
 extern "C" void *memalign(size_t align, size_t size);
 struct N64FreeDeleter {
@@ -199,6 +200,12 @@ void N64UpdateUiMode()
 	if (want && n64OverlaySurface == nullptr) {
 		N64FreeFloorSave(); // deja sitio
 		n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
+		if (n64OverlaySurface == nullptr) {
+			// f2v72: con la memoria troceada no cabia (el menu de START salia debajo del panel):
+			// se suelta la cache de CEL (se vuelve a pedir sola) y se reintenta
+			n64_cel_cache_release();
+			n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
+		}
 	}
 	const bool on = want && n64OverlaySurface != nullptr;
 	if (on != N64UiMode) {
@@ -1351,8 +1358,15 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
 	// Adjust by player offset and tile grid alignment
 	const Player &myPlayer = *MyPlayer;
 	offset = tileOffset;
-	if (myPlayer.isWalking())
+	if (myPlayer.isWalking()) {
 		offset += GetOffsetForWalking(myPlayer.AnimInfo, myPlayer._pdir, true);
+#ifdef __N64__
+		// f2v72: desplazamiento horizontal siempre par: asi el suelo guardado se puede mover con el
+		// RDP en todos los cuadros (los impares obligaban a dibujar el suelo entero). El mundo se
+		// mueve a saltos de 2 pixeles en horizontal (0,8 pixeles de la tele).
+		offset.deltaX &= ~1;
+#endif
+	}
 
 	position += tileShift;
 
