@@ -41,6 +41,7 @@
 #include "engine/load_pcx.hpp"
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
+#include "engine/render/primitive_render.hpp"
 #include "engine/render/text_render.hpp"
 #include "engine/sound.h"
 #include "engine/surface.hpp"
@@ -184,6 +185,133 @@ void HandleCtrTextInput(std::string_view textInput)
 }
 #endif
 
+#ifdef __N64__
+// f2v57: teclado en pantalla para escribir el nombre de un personaje nuevo (como el del DSi, pero con
+// el mando): cruceta para moverse, A escribe, B borra, START termina.
+uint8_t N64NearestColor(int r, int g, int b)
+{
+	int best = 0;
+	int bestD = 1 << 30;
+	for (int i = 1; i < 256; i++) {
+		const int dr = system_palette[i].r - r;
+		const int dg = system_palette[i].g - g;
+		const int db = system_palette[i].b - b;
+		const int d = dr * dr + dg * dg + db * db;
+		if (d < bestD) {
+			bestD = d;
+			best = i;
+		}
+	}
+	return static_cast<uint8_t>(best);
+}
+
+void N64Frame(const Surface &out, int x, int y, int w, int h, uint8_t c)
+{
+	DrawHorizontalLine(out, { x, y }, w, c);
+	DrawHorizontalLine(out, { x, y + h - 1 }, w, c);
+	DrawVerticalLine(out, { x, y }, h, c);
+	DrawVerticalLine(out, { x + w - 1, y }, h, c);
+}
+
+void N64VirtualKeyboard(std::string_view hint, char *buf, int maxlen)
+{
+	static const char *const Rows[4] = { "1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCVBNM_.!" };
+	static const char *const Specials[4] = { "SHIFT", "CLEAR", "DELETE", "OK" }; // el juego no admite espacios en el nombre
+	if (maxlen < 1)
+		maxlen = 1;
+	int len = static_cast<int>(strlen(buf));
+	if (len > maxlen) {
+		len = maxlen;
+		buf[len] = '\0';
+	}
+	bool shift = len == 0;
+	int row = 1;
+	int col = 0;
+	const uint8_t cKey = N64NearestColor(44, 34, 26);
+	const uint8_t cSel = N64NearestColor(170, 120, 40);
+	const uint8_t cEdge = N64NearestColor(130, 100, 60);
+	bool done = false;
+	while (!done) {
+		const Surface out(DiabloUiSurface());
+		FillRect(out, 0, 0, out.w(), out.h(), 0);
+		DrawString(out, hint, Rectangle { { 0, 24 }, { out.w(), 40 } }, { .flags = UiFlags::FontSize30 | UiFlags::ColorUiGold | UiFlags::AlignCenter });
+		N64Frame(out, 60, 84, 520, 60, cEdge);
+		const std::string shown = StrCat(buf, "_");
+		DrawString(out, shown, Rectangle { { 64, 96 }, { 512, 40 } }, { .flags = UiFlags::FontSize30 | UiFlags::ColorUiSilver | UiFlags::AlignCenter });
+		for (int r = 0; r < 5; r++) {
+			const int n = r < 4 ? 10 : 4;
+			for (int c = 0; c < n; c++) {
+				const int x = r < 4 ? 25 + c * 60 : 25 + c * 150;
+				const int y = 168 + r * 58;
+				const int w = r < 4 ? 50 : 140;
+				const int h = r < 4 ? 50 : 46;
+				const bool sel = r == row && c == col;
+				const bool on = r == 4 && c == 0 && shift;
+				FillRect(out, x, y, w, h, sel ? cSel : cKey);
+				N64Frame(out, x, y, w, h, on ? cSel : cEdge);
+				char one[2] = { Rows[r < 4 ? r : 0][c], '\0' };
+				if (r < 4 && !shift && one[0] >= 'A' && one[0] <= 'Z')
+					one[0] = static_cast<char>(one[0] + 32);
+				const std::string_view label = r < 4 ? std::string_view(one) : std::string_view(Specials[c]);
+				DrawString(out, label, Rectangle { { x, y }, { w, h } },
+				    { .flags = UiFlags::FontSize24 | (sel ? UiFlags::ColorWhite : (on ? UiFlags::ColorWhitegold : UiFlags::ColorUiGold)) | UiFlags::AlignCenter | UiFlags::VerticalCenter });
+			}
+		}
+		RenderPresent();
+
+		SDL_Event event;
+		while (SDL_PollEvent(&event)) {
+			if (event.type != SDL_EVENT_KEY_DOWN)
+				continue;
+			int act = 0; // 1 escribir la tecla elegida, 2 borrar, 3 terminar, 4 mayusculas
+			const int oldRow = row;
+			switch (SDLC_EventKey(event)) {
+			case SDLK_UP: row = (row + 4) % 5; break;
+			case SDLK_DOWN: row = (row + 1) % 5; break;
+			case SDLK_LEFT: col = (col + (row < 4 ? 9 : 3)) % (row < 4 ? 10 : 4); break;
+			case SDLK_RIGHT: col = (col + 1) % (row < 4 ? 10 : 4); break;
+			case SDLK_LCTRL: act = 1; break; // A
+			case SDLK_LALT: act = 2; break; // B
+			case SDLK_RETURN: act = 3; break; // START
+			case SDLK_SPACE: act = 4; break; // C izquierda
+			default: break;
+			}
+			if (oldRow != row && (oldRow == 4) != (row == 4))
+				col = row == 4 ? col * 4 / 10 : std::min(9, col * 10 / 4 + 1);
+			if (act == 1 && row == 4) {
+				static constexpr int SpecialAct[4] = { 4, 5, 2, 3 };
+				act = SpecialAct[col];
+			}
+			if (act == 5) {
+				len = 0;
+				buf[0] = '\0';
+				shift = true;
+			} else if (act == 1) {
+				char ch = Rows[row][col];
+				const bool letter = ch >= 'A' && ch <= 'Z';
+				if (letter && !shift)
+					ch = static_cast<char>(ch + 32);
+				if (len < maxlen) {
+					buf[len++] = ch;
+					buf[len] = '\0';
+				}
+				if (letter && shift)
+					shift = false;
+			} else if (act == 2) {
+				if (len > 0)
+					buf[--len] = '\0';
+				if (len == 0)
+					shift = true;
+			} else if (act == 3) {
+				done = true;
+			} else if (act == 4) {
+				shift = !shift;
+			}
+		}
+	}
+}
+#endif
+
 } // namespace
 
 bool IsTextInputActive()
@@ -232,6 +360,18 @@ void UiInitList(void (*fnFocus)(size_t value), void (*fnSelect)(size_t value), v
 			    .cursor = &pItemUIEdit->m_cursor,
 			    .maxLength = pItemUIEdit->m_max_length,
 			});
+#ifdef __N64__
+			{
+				char n64Buf[64];
+				size_t n64I = 0;
+				for (; n64I < sizeof n64Buf - 1 && pItemUIEdit->m_value[n64I] != '\0'; n64I++)
+					n64Buf[n64I] = pItemUIEdit->m_value[n64I];
+				n64Buf[n64I] = '\0';
+				const int n64Max = (pItemUIEdit->m_max_length > 0 && pItemUIEdit->m_max_length < 60) ? static_cast<int>(pItemUIEdit->m_max_length) : 60;
+				N64VirtualKeyboard(pItemUIEdit->m_hint, n64Buf, n64Max);
+				UiTextInputState->assign(std::string_view(n64Buf));
+			}
+#endif
 		} else if (item->IsType(UiType::List)) {
 			auto *uiList = static_cast<UiList *>(item.get());
 			SelectedItemMax = std::max(uiList->m_vecItems.size() - 1, static_cast<size_t>(0));

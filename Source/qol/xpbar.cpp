@@ -85,9 +85,7 @@ const auto OptionChangeHandler = (GetOptions().Gameplay.experienceBar.SetValueCh
 void InitXPBar()
 {
 	if (XPBarOn()) {
-#ifdef __N64__
-		xpbarArt = LoadOptionalClx("data\\xpbar.clx"); // si falta en la SD, sin barra (no se cierra)
-#else
+#ifndef __N64__ // f2v57: en N64 la barra la dibuja el RDP (no hace falta el dibujo)
 		xpbarArt = LoadClx("data\\xpbar.clx");
 #endif
 	}
@@ -98,8 +96,27 @@ void FreeXPBar()
 	xpbarArt = std::nullopt;
 }
 
+#ifdef __N64__
+extern "C" void n64_xpbar_set(int permille, int blink);
+#endif
+
 void DrawXPBar(const Surface &out)
 {
+#ifdef __N64__
+	{
+		// f2v57: barra verde de 8 tramos como en el DSi, la dibuja el RDP encima del panel reducido
+		(void)out;
+		const Player &p = *MyPlayer;
+		int permille = 1000;
+		if (!p.isMaxCharacterLevel()) {
+			const uint64_t prev = GetNextExperienceThresholdForLevel(p.getCharacterLevel() - 1);
+			const uint64_t next = GetNextExperienceThresholdForLevel(p.getCharacterLevel());
+			permille = (p._pExperience <= prev || next <= prev) ? 0 : static_cast<int>((p._pExperience - prev) * 1000 / (next - prev));
+		}
+		n64_xpbar_set(ChatFlag ? -1 : permille, p._pStatPts > 0 ? 1 : 0);
+		return;
+	}
+#endif
 	if (!XPBarOn() || ChatFlag || !xpbarArt)
 		return;
 
