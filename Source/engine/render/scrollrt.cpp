@@ -140,6 +140,7 @@ extern "C" int n64_heap_free_kib(void);
 extern "C" int n64_rdp_copy8(uint8_t *dst, int dpitch, const uint8_t *src, int spitch, int w, int h);
 extern "C" int n64_rdp_fill8(uint8_t *dst, int dpitch, int w, int h, int value);
 extern "C" void n64_cel_cache_release(void);
+extern "C" void n64_big_zone(int on);
 extern "C" int n64_rdp_blit8(uint8_t *dst, int dpitch, int dh, int dx, int dy, const uint8_t *src, int spitch, int sh, int sx, int sy, int w, int h);
 extern "C" void *memalign(size_t align, size_t size);
 struct N64FreeDeleter {
@@ -204,7 +205,10 @@ void N64UpdateUiMode()
 		// Antes la memoria se iba troceando: la cache quedaba pequena (el pueblo iba a 6 fps) y al
 		// guardar no cabia el bloque del guardado.
 		n64_cel_cache_release();
+		// f2v80: la capa (300 KiB) va al bloque fijo de la cache de CEL; el anillo usa lo que sobra
+		n64_big_zone(1);
 		n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
+		n64_big_zone(0);
 	}
 	const bool on = want && n64OverlaySurface != nullptr;
 	if (on != N64UiMode) {

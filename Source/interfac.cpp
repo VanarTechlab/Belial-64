@@ -677,6 +677,7 @@ void CompleteProgress()
 
 #ifdef __N64__
 extern "C" void n64_cel_cache_release(void);
+extern "C" void n64_big_zone(int on);
 void CalcViewportGeometry();
 void N64FreePanelLayer();
 #endif
@@ -717,7 +718,15 @@ void ShowProgress(interface_mode uMsg)
 
 		// Always load the background (even if we end up skipping rendering it).
 		// This is because the MPQ archive can only be read by a single thread at a time.
+#ifdef __N64__
+		// f2v80: las dos imagenes de la pantalla de carga van al bloque fijo (el de la cache de CEL), no al
+		// heap: antes pedian ~200 KiB seguidos que a veces no habia (memoria troceada) -> std::bad_alloc
+		n64_big_zone(1);
 		LoadCutsceneBackground(uMsg);
+		n64_big_zone(0);
+#else
+		LoadCutsceneBackground(uMsg);
+#endif
 
 		// Save the palette at this point because the loading process may replace it.
 		ProgressEventHandlerState.palette = logical_palette;

@@ -195,6 +195,18 @@ public:
 	}
 };
 
+#ifdef __N64__
+extern "C" void n64_big_zone(int on);
+// f2v80: el bufer del guardado (320 KiB el de la partida, 256 KiB el de cada nivel) sale del bloque
+// fijo si cabe; si no, del heap como antes
+static std::byte *N64SaveBuffer(size_t len)
+{
+	n64_big_zone(1);
+	std::byte *p = new std::byte[len];
+	n64_big_zone(0);
+	return p;
+}
+#endif
 class SaveHelper {
 	SaveWriter &m_mpqWriter;
 	const char *m_szFileName_;
@@ -206,7 +218,11 @@ public:
 	SaveHelper(SaveWriter &mpqWriter, const char *szFileName, size_t bufferLen)
 	    : m_mpqWriter(mpqWriter)
 	    , m_szFileName_(szFileName)
+#ifdef __N64__
+	    , m_buffer_(N64SaveBuffer(codec_get_encoded_len(bufferLen)))
+#else
 	    , m_buffer_(new std::byte[codec_get_encoded_len(bufferLen)])
+#endif
 	    , m_capacity_(bufferLen)
 	{
 	}
