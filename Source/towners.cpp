@@ -768,6 +768,9 @@ void InitTowners()
 	for (auto &entry : TownersDataEntries) {
 		if (entry.type == TOWN_PEGBOY && entry.position == Point { 11, 53 })
 			entry.position = Point { 54, 52 };
+		// f2v92: Farnham donde eligio Vanar (antes 71,84)
+		if (entry.type == TOWN_DRUNK && entry.position == Point { 71, 84 })
+			entry.position = Point { 55, 72 };
 	}
 #endif
 	TownerAnimOrderStorage.clear();
