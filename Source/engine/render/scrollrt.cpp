@@ -113,6 +113,8 @@ namespace {
 constexpr int N64PanelLayerRows = 160;
 constexpr int N64PanelRow = 32;
 extern "C" void n64_panel_zone(int on);
+extern "C" void n64_world_skip(void); // f2v85
+unsigned N64WorldFrozenFrames = 0;
 SDL_Surface *n64PanelSurface;
 Surface N64PanelOut(const Surface &out)
 {
@@ -1752,16 +1754,29 @@ void DrawView(const Surface &out, Point startPosition)
 #endif
 	Displacement offset = {};
 	CalcFirstTilePosition(startPosition, offset);
-	DrawGame(out, startPosition, offset);
 #ifdef __N64__
-	const unsigned n64Am0 = n64_us();
-	if (AutomapActive) {
-		DrawAutomap(out.subregionY(0, gnViewportHeight));
+	// f2v85: en el pueblo, con una tienda o un dialogo abierto (el heroe no se mueve), el mundo de detras
+	// se dibuja una vez y despues se congela: se vuelve a mostrar esa imagen completa (sdl_n64.c) y solo
+	// cambia la capa de la interfaz. Antes las tiendas iban a 6-10 fps (la cache de CEL queda pequena).
+	static bool n64FreezeReady = false;
+	const bool n64Freeze = leveltype == DTYPE_TOWN && N64UiMode && N64UiStoreOnly() && !MyPlayerIsDead;
+	const bool n64SkipWorld = n64Freeze && n64FreezeReady;
+	n64FreezeReady = n64Freeze;
+	if (n64SkipWorld) {
+		n64_world_skip();
+		N64WorldFrozenFrames++;
 	} else {
-		N64DrawMinimap(out);
+		DrawGame(out, startPosition, offset);
+		const unsigned n64Am0 = n64_us();
+		if (AutomapActive) {
+			DrawAutomap(out.subregionY(0, gnViewportHeight));
+		} else {
+			N64DrawMinimap(out);
+		}
+		n64_prof_add(30, n64_us() - n64Am0);
 	}
-	n64_prof_add(30, n64_us() - n64Am0);
 #else
+	DrawGame(out, startPosition, offset);
 	if (AutomapActive) {
 		DrawAutomap(out.subregionY(0, gnViewportHeight));
 	}
@@ -1834,9 +1849,17 @@ void DrawView(const Surface &out, Point startPosition)
 		}
 	}
 #endif
+#ifdef __N64__
+	if (!n64SkipWorld) {
+		DrawItemNameLabels(out);
+		DrawMonsterHealthBar(out);
+		DrawFloatingNumbers(out, startPosition, offset);
+	}
+#else
 	DrawItemNameLabels(out);
 	DrawMonsterHealthBar(out);
 	DrawFloatingNumbers(out, startPosition, offset);
+#endif
 
 #ifdef __N64__
 	// f2v54: en modo interfaz todo esto va a la capa de 640x480 (se borra en cada fotograma)
