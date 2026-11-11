@@ -997,10 +997,16 @@ void RunGameLoop(interface_mode uMsg)
 #ifdef __N64__
 		const unsigned n64T0 = n64_us();
 #endif
+#ifdef __N64__
+		if (game_loop(gbGameLoopStartup)) {
+			const unsigned n64Tc = n64_us();
+			diablo_color_cyc_logic();
+			n64_prof_add(35, n64_us() - n64Tc); // f2v81: medir el ciclo de colores (cuevas, infierno)
+		}
+		n64_prof_add(0, n64_us() - n64T0);
+#else
 		if (game_loop(gbGameLoopStartup))
 			diablo_color_cyc_logic();
-#ifdef __N64__
-		n64_prof_add(0, n64_us() - n64T0);
 #endif
 		gbGameLoopStartup = false;
 		if (drawGame)

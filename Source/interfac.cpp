@@ -678,6 +678,7 @@ void CompleteProgress()
 #ifdef __N64__
 extern "C" void n64_cel_cache_release(void);
 extern "C" void n64_big_zone(int on);
+extern "C" void n64_music_hold(int on);
 void CalcViewportGeometry();
 void N64FreePanelLayer();
 #endif
@@ -689,6 +690,7 @@ void ShowProgress(interface_mode uMsg)
 	N64FreePanelLayer();
 	n64_cel_cache_release();
 	N64UseLoadingResolution(true);
+	n64_music_hold(1); // f2v81: sin musica en la pantalla de carga (se entrecortaba)
 #endif
 	IsProgress = true;
 	gbSomebodyWonGameKludge = false;
@@ -751,6 +753,7 @@ void ShowProgress(interface_mode uMsg)
 #ifdef __N64__
 	N64UseLoadingResolution(false);
 	CalcViewportGeometry();
+	n64_music_hold(0); // f2v81: ahora empieza la musica del nivel
 #endif
 }
 
