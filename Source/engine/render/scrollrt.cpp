@@ -2505,14 +2505,6 @@ void DrawAndBlit()
 #endif
 
 	DrawFPS(out);
-#ifdef __N64__
-	// f2v90 SOLO PRUEBAS: coordenadas del heroe arriba a la derecha en el pueblo (para elegir sitio a Farnham)
-	if (leveltype == DTYPE_TOWN && !N64UiMode && MyPlayer != nullptr) {
-		const Point n64P = MyPlayer->position.tile;
-		DrawString(out, StrCat(n64P.x, ",", n64P.y), Rectangle(Point { gnScreenWidth - 70, 4 }, Size { 66, 16 }),
-		    { .flags = UiFlags::ColorWhite | UiFlags::AlignRight });
-	}
-#endif
 	N64_GUARD("tras DrawCursor+DrawFPS");
 
 #ifdef __N64__
