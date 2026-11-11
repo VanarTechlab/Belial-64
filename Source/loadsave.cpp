@@ -2971,10 +2971,12 @@ void SaveGameData(SaveWriter &saveWriter)
 	SaveLevelSeeds(saveWriter);
 }
 
+extern "C" void n64_rumble_stop(void);
 void SaveGame()
 {
 	gbValidSaveFile = true;
 #ifdef __N64__
+	n64_rumble_stop(); // v0.8.6 prueba 2: no vibrar mientras se guarda
 	n64_zona(1);
 #endif
 	N64_PASO("guardar: inicio (nivel %d)", static_cast<int>(currlevel));
