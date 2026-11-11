@@ -147,6 +147,18 @@ Cutscenes PickCutscene(interface_mode uMsg)
 	}
 }
 
+// f2v82: en la N64 la pantalla de carga va a 640x480: la imagen panoramica (los lados que solo se ven
+// en pantallas anchas) no se ve y pedia hasta 326 KiB (f2v81: 333754 + 303598 bytes no cabian juntos)
+OptionalOwnedClxSpriteList N64LoadWidescreen(const char *path)
+{
+#ifdef __N64__
+	(void)path;
+	return std::nullopt;
+#else
+	return LoadOptionalClx(path);
+#endif
+}
+
 void LoadCutsceneBackground(interface_mode uMsg)
 {
 	const char *celPath;
@@ -154,67 +166,67 @@ void LoadCutsceneBackground(interface_mode uMsg)
 
 	switch (PickCutscene(uMsg)) {
 	case CutStart:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutstartw.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cutstartw.clx");
 		celPath = "gendata\\cutstart";
 		palPath = "gendata\\cutstart.pal";
 		progress_id = 1;
 		break;
 	case CutTown:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutttw.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cutttw.clx");
 		celPath = "gendata\\cuttt";
 		palPath = "gendata\\cuttt.pal";
 		progress_id = 1;
 		break;
 	case CutLevel1:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutl1dw.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cutl1dw.clx");
 		celPath = "gendata\\cutl1d";
 		palPath = "gendata\\cutl1d.pal";
 		progress_id = 0;
 		break;
 	case CutLevel2:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cut2w.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cut2w.clx");
 		celPath = "gendata\\cut2";
 		palPath = "gendata\\cut2.pal";
 		progress_id = 2;
 		break;
 	case CutLevel3:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cut3w.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cut3w.clx");
 		celPath = "gendata\\cut3";
 		palPath = "gendata\\cut3.pal";
 		progress_id = 1;
 		break;
 	case CutLevel4:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cut4w.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cut4w.clx");
 		celPath = "gendata\\cut4";
 		palPath = "gendata\\cut4.pal";
 		progress_id = 1;
 		break;
 	case CutLevel5:
-		ArtCutsceneWidescreen = LoadOptionalClx("nlevels\\cutl5w.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("nlevels\\cutl5w.clx");
 		celPath = "nlevels\\cutl5";
 		palPath = "nlevels\\cutl5.pal";
 		progress_id = 1;
 		break;
 	case CutLevel6:
-		ArtCutsceneWidescreen = LoadOptionalClx("nlevels\\cutl6w.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("nlevels\\cutl6w.clx");
 		celPath = "nlevels\\cutl6";
 		palPath = "nlevels\\cutl6.pal";
 		progress_id = 1;
 		break;
 	case CutPortal:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutportlw.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cutportlw.clx");
 		celPath = "gendata\\cutportl";
 		palPath = "gendata\\cutportl.pal";
 		progress_id = 1;
 		break;
 	case CutPortalRed:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutportrw.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cutportrw.clx");
 		celPath = "gendata\\cutportr";
 		palPath = "gendata\\cutportr.pal";
 		progress_id = 1;
 		break;
 	case CutGate:
-		ArtCutsceneWidescreen = LoadOptionalClx("gendata\\cutgatew.clx");
+		ArtCutsceneWidescreen = N64LoadWidescreen("gendata\\cutgatew.clx");
 		celPath = "gendata\\cutgate";
 		palPath = "gendata\\cutgate.pal";
 		progress_id = 1;

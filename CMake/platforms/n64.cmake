@@ -53,3 +53,6 @@ set(DEVILUTIONX_DISABLE_STRIP ON) # se quitan los simbolos al crear la ROM (n64s
 # Resolucion nativa de la N64 (ahorra ~1,1 MB de RAM y dibuja 4 veces menos pixeles)
 set(DEFAULT_WIDTH 400)
 set(DEFAULT_HEIGHT 300)
+# f2v82: sin la tabla de 128 KiB de mezcla con negro: con el ciclo de colores de las cuevas
+# costaba 13-22 ms por cuadro rehacerla (y ahorra 128 KiB de RAM)
+set(DEVILUTIONX_PALETTE_TRANSPARENCY_BLACK_16_LUT OFF)
