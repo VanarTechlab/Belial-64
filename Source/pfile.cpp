@@ -59,6 +59,14 @@
 #include <dir.h>
 #endif
 
+#ifdef __N64__
+extern "C" void n64_paso(const char *fmt, ...);
+extern "C" void n64_zona(int on);
+#define N64_PASO(...) n64_paso(__VA_ARGS__)
+#else
+#define N64_PASO(...) ((void)0)
+#endif
+
 namespace devilution {
 
 #define PASSWORD_SPAWN_SINGLE "adslhfb1"
@@ -531,18 +539,23 @@ HeroCompareResult CompareSaves(const std::string &actualSavePath, const std::str
 void pfile_write_hero(SaveWriter &saveWriter, bool writeGameData)
 {
 	if (writeGameData) {
+		N64_PASO("guardar: datos de la partida");
 		SaveGameData(saveWriter);
+		N64_PASO("guardar: pisos temporales a definitivos");
 		RenameTempToPerm(saveWriter);
 	}
 	PlayerPack pkplr;
 	Player &myPlayer = *MyPlayer;
 
 	PackPlayer(pkplr, myPlayer);
+	N64_PASO("guardar: personaje");
 	EncodeHero(saveWriter, &pkplr);
 	if (!gbVanilla) {
 		SaveHotkeys(saveWriter, myPlayer);
+		N64_PASO("guardar: objetos");
 		SaveHeroItems(saveWriter, myPlayer);
 	}
+	N64_PASO("guardar: personaje hecho");
 }
 
 void RemoveAllInvalidItems(Player &player)
@@ -838,8 +851,10 @@ void pfile_read_player_from_save(uint32_t saveNum, Player &player)
 
 void pfile_save_level()
 {
+	N64_PASO("guardar el piso %d: inicio", static_cast<int>(currlevel));
 	SaveWriter saveWriter = GetSaveWriter(gSaveNumber);
 	SaveLevel(saveWriter);
+	N64_PASO("guardar el piso: fin");
 }
 
 std::expected<void, std::string> pfile_convert_levels()

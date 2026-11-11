@@ -136,6 +136,14 @@
 #include <gperftools/heap-profiler.h>
 #endif
 
+#ifdef __N64__
+extern "C" void n64_paso(const char *fmt, ...);
+extern "C" void n64_zona(int on);
+#define N64_PASO(...) n64_paso(__VA_ARGS__)
+#else
+#define N64_PASO(...) ((void)0)
+#endif
+
 namespace devilution {
 
 Point MousePosition;
@@ -3383,6 +3391,7 @@ std::expected<void, std::string> LoadGameLevelDungeon(bool firstflag, lvl_entry 
 
 		IncProgress();
 
+		N64_PASO("nivel: leer el piso guardado");
 		RETURN_IF_ERROR(LoadLevel());
 
 		IncProgress();
@@ -3623,7 +3632,9 @@ std::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir)
 
 	IncProgress();
 
+	N64_PASO("nivel: graficos (tipo %d)", static_cast<int>(leveltype));
 	RETURN_IF_ERROR(LoadLvlGFX());
+	N64_PASO("nivel: trozos del CEL");
 	SetDungeonMicros(pDungeonCels, MicroTileLen);
 	ClearClxDrawCache();
 
@@ -3685,7 +3696,9 @@ std::expected<void, std::string> LoadGameLevel(bool firstflag, lvl_entry lvldir)
 #ifndef USE_SDL1
 	ActivateVirtualGamepad();
 #endif
+	N64_PASO("nivel: musica");
 	LoadGameLevelStartMusic(neededTrack);
+	N64_PASO("nivel: listo");
 
 	CompleteProgress();
 

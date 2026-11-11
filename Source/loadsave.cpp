@@ -46,6 +46,14 @@
 #include "utils/language.h"
 #include "utils/status_macros.hpp"
 
+#ifdef __N64__
+extern "C" void n64_paso(const char *fmt, ...);
+extern "C" void n64_zona(int on);
+#define N64_PASO(...) n64_paso(__VA_ARGS__)
+#else
+#define N64_PASO(...) ((void)0)
+#endif
+
 namespace devilution {
 
 bool gbIsHellfireSaveGame;
@@ -2950,8 +2958,14 @@ void SaveGameData(SaveWriter &saveWriter)
 void SaveGame()
 {
 	gbValidSaveFile = true;
+#ifdef __N64__
+	n64_zona(1);
+#endif
+	N64_PASO("guardar: inicio (nivel %d)", static_cast<int>(currlevel));
 	pfile_write_hero(/*writeGameData=*/true);
+	N64_PASO("guardar: alijo");
 	sfile_write_stash();
+	N64_PASO("guardar: fin");
 }
 
 void SaveLevel(SaveWriter &saveWriter)

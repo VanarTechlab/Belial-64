@@ -60,6 +60,11 @@
 #include "utils/display.h"
 #endif
 
+#ifdef __N64__
+extern "C" void n64_paso(const char *fmt, ...);
+extern "C" void n64_zona(int on);
+#endif
+
 namespace devilution {
 
 namespace {
@@ -319,6 +324,10 @@ bool HandleProgressBarUpdate()
 
 void DoLoad(interface_mode uMsg)
 {
+#ifdef __N64__
+	n64_zona(1);
+	n64_paso("carga: inicio (modo %d, nivel %d -> %d)", static_cast<int>(uMsg), static_cast<int>(currlevel), static_cast<int>(MyPlayer->plrlevel));
+#endif
 	IncProgress();
 	sound_init();
 	IncProgress();
@@ -490,6 +499,9 @@ void DoLoad(interface_mode uMsg)
 	}
 
 	SDL_Event event;
+#ifdef __N64__
+	n64_paso("carga: fin (nivel %d)", static_cast<int>(currlevel));
+#endif
 	CustomEventToSdlEvent(event, WM_DONE);
 	if (!SDLC_PushEvent(&event)) {
 		LogError("Failed to send WM_DONE {}", SDL_GetError());
@@ -616,6 +628,8 @@ void interface_msg_pump()
 extern "C" void n64_log(const char *fmt, ...);
 extern "C" void n64_log_flush(void);
 extern "C" void n64_audio_pump(void);
+extern "C" void n64_paso(const char *fmt, ...);
+extern "C" void n64_zona(int on);
 #endif
 void IncProgress(uint32_t steps)
 {
@@ -625,6 +639,9 @@ void IncProgress(uint32_t steps)
 #endif
 	if (!IsProgress)
 		return;
+#ifdef __N64__
+	n64_paso("carga: progreso %u", static_cast<unsigned>(sgdwProgress)); // f2v79: diagnostico
+#endif
 	const uint32_t prevProgress = sgdwProgress;
 	sgdwProgress += ProgressStepSize * steps;
 	if (sgdwProgress > MaxProgress)
