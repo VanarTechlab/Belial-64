@@ -763,6 +763,13 @@ void InitTowners()
 
 	// Load towner data from TSV files
 	LoadTownerData();
+#ifdef __N64__
+	// f2v90: Wirt al centro del pueblo, como en Hellspawn (NDS-WIRT); antes 11,53, en el extremo oeste
+	for (auto &entry : TownersDataEntries) {
+		if (entry.type == TOWN_PEGBOY && entry.position == Point { 11, 53 })
+			entry.position = Point { 54, 52 };
+	}
+#endif
 	TownerAnimOrderStorage.clear();
 
 	// Build lookup table for towner behaviors
