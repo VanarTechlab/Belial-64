@@ -2369,6 +2369,10 @@ void DrawAndBlit()
 	N64UpdateUiMode();
 	if (N64UiMode)
 		RedrawEverything(); // la capa se borra en cada fotograma: el panel se vuelve a dibujar entero
+	{
+		void N64PouchSync(Player &player); // f2v89: el oro no ocupa casillas
+		N64PouchSync(*MyPlayer);
+	}
 #endif
 
 	int hgt = 0;

@@ -26,6 +26,7 @@
 #include "engine/load_cel.hpp"
 #include "engine/palette.h"
 #include "engine/render/clx_render.hpp"
+#include "engine/render/primitive_render.hpp" // f2v89: monedero
 #include "engine/render/text_render.hpp"
 #include "engine/size.hpp"
 #include "hwcursor.hpp"
@@ -463,6 +464,14 @@ int8_t GetPrevItemId(int slot, const Player &player, const Size &itemSize)
 
 bool ChangeInvItem(Player &player, int slot, Size itemSize)
 {
+#ifdef __N64__ // f2v89 (como NDS-MONEDERO de Hellspawn): el oro no va a casillas, va al monedero
+	if (player.HoldItem._itype == ItemType::Gold) {
+		GoldAutoPlace(player, player.HoldItem);
+		if (player.HoldItem._ivalue <= 0)
+			player.HoldItem.clear();
+		return true;
+	}
+#endif
 	int8_t prevItemId = GetPrevItemId(slot, player, itemSize);
 	if (prevItemId < 0) return false;
 
@@ -496,6 +505,10 @@ bool ChangeInvItem(Player &player, int slot, Size itemSize)
 			NetSendCmdChInvItem(false, ii);
 		}
 	} else {
+#ifdef __N64__ // f2v89: la lista del inventario esta llena (montones de oro sin casillas)
+		if (prevItemId == 0 && player._pNumInv >= InventoryGridCells)
+			return false;
+#endif
 		if (prevItemId == 0) {
 			player.InvList[player._pNumInv] = player.HoldItem.pop();
 			player._pNumInv++;
@@ -1107,6 +1120,10 @@ void StartGoldDrop()
 
 int CreateGoldItemInInventorySlot(Player &player, int slotIndex, int value)
 {
+#ifdef __N64__ // f2v89
+	if (player._pNumInv >= InventoryGridCells)
+		return value;
+#endif
 	if (player.InvGrid[slotIndex] != 0) {
 		return value;
 	}
@@ -1187,6 +1204,10 @@ void InitInv()
 void DrawInv(const Surface &out)
 {
 	ClxDraw(out, GetPanelPosition(UiPanels::Inventory, { 0, 351 }), (*pInvCels)[0]);
+#ifdef __N64__ // f2v89: monedero arriba a la izquierda del inventario
+	void N64PouchDraw(const Surface &out, Player &player);
+	N64PouchDraw(out, *InspectPlayer);
+#endif
 
 	const Size slotSize[] = {
 		{ 2, 2 }, // head
@@ -1397,11 +1418,32 @@ bool AutoEquipEnabled(const Player &player, const Item &item)
 
 bool CanFitItemInInventory(const Player &player, const Item &item)
 {
+#ifdef __N64__ // f2v89
+	if (item._itype == ItemType::Gold) {
+		if (player._pNumInv < InventoryGridCells)
+			return true;
+		for (int i = 0; i < player._pNumInv; i++)
+			if (player.InvList[i]._itype == ItemType::Gold && player.InvList[i]._ivalue < MaxGold)
+				return true;
+		return false;
+	}
+	if (player._pNumInv >= InventoryGridCells)
+		return false;
+#endif
 	return static_cast<bool>(FindSlotForItem(player, GetInventorySize(item)));
 }
 
 bool AutoPlaceItemInInventory(Player &player, const Item &item, bool sendNetworkMessage)
 {
+#ifdef __N64__ // f2v89: el oro va a la lista sin casillas
+	if (player._pNumInv >= InventoryGridCells)
+		return false;
+	if (item._itype == ItemType::Gold) {
+		player.InvList[player._pNumInv] = item;
+		player._pNumInv++;
+		return true;
+	}
+#endif
 	const Size itemSize = GetInventorySize(item);
 	std::optional<int> targetSlot = FindSlotForItem(player, itemSize);
 
@@ -1484,6 +1526,40 @@ void ReorganizeInventory(Player &player)
 	}
 }
 
+#ifdef __N64__ // f2v89: monedero
+void N64PouchSync(Player &player)
+{
+	// ningun monton de oro ocupa casillas (convierte las partidas antiguas)
+	for (int8_t &cell : player.InvGrid) {
+		if (cell == 0)
+			continue;
+		const int idx = std::abs(cell) - 1;
+		if (idx < player._pNumInv && player.InvList[idx]._itype == ItemType::Gold)
+			cell = 0;
+	}
+}
+
+void N64PouchDraw(const Surface &out, Player &player)
+{
+	const Point pp = GetPanelPosition(UiPanels::Inventory, { 6, 6 });
+	DrawHalfTransparentRectTo(out, pp.x, pp.y, 124, 62);
+	const ClxSprite sprite = GetInvItemSprite(ICURS_GOLD_LARGE + CURSOR_FIRSTITEM);
+	ClxDraw(out, pp + Displacement { 4, 45 }, sprite);
+	DrawString(out, FormatInteger(CalculateGold(player)), { pp + Displacement { 34, 16 }, { 88, 30 } },
+	    { .flags = UiFlags::FontSize24 | UiFlags::ColorWhitegold | UiFlags::AlignCenter });
+}
+
+int RoomForGold()
+{
+	int amount = (InventoryGridCells - MyPlayer->_pNumInv) * MaxGold;
+	for (int i = 0; i < MyPlayer->_pNumInv; i++) {
+		const Item &goldItem = MyPlayer->InvList[i];
+		if (goldItem._itype == ItemType::Gold && goldItem._ivalue < MaxGold)
+			amount += MaxGold - goldItem._ivalue;
+	}
+	return amount;
+}
+#else
 int RoomForGold()
 {
 	int amount = 0;
@@ -1506,6 +1582,7 @@ int RoomForGold()
 
 	return amount;
 }
+#endif // f2v89
 
 int AddGoldToInventory(Player &player, int value)
 {
@@ -1528,6 +1605,14 @@ int AddGoldToInventory(Player &player, int value)
 		SetPlrHandGoldCurs(goldItem);
 	}
 
+#ifdef __N64__ // f2v89: montones nuevos sin casillas
+	while (value > 0 && player._pNumInv < InventoryGridCells) {
+		Item &goldItem = player.InvList[player._pNumInv];
+		MakeGoldStack(goldItem, std::min(value, MaxGold));
+		player._pNumInv++;
+		value -= goldItem._ivalue;
+	}
+#endif
 	// Last row right to left
 	for (int i = 39; i >= 30 && value > 0; i--) {
 		value = CreateGoldItemInInventorySlot(player, i, value);
