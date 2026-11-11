@@ -1284,7 +1284,7 @@ void DiabloInitScreen()
 void SetApplicationVersions()
 {
 #ifdef __N64__
-	*BufCopy(gszProductName, "Belial 64 v0.8.6 prueba 2 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
+	*BufCopy(gszProductName, "Belial 64 v0.8.6 prueba 3 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
 #else
 	*BufCopy(gszProductName, PROJECT_NAME, " v", PROJECT_VERSION) = '\0';
 #endif
