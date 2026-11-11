@@ -408,7 +408,7 @@ func wndProc(hw, msg, wp, lp uintptr) uintptr {
 		gProg = create("msctls_progress32", "", 0, 20, 654, 600, 16, 0, gFont)
 		call(pSendMessageW, gProg, pbmSetRange, 0, 100<<16)
 		gLog = create("EDIT", "", wsBorder|wsVScroll|esMultiline|esAutoVScroll|esReadOnly, 20, 678, 600, 186, 0, gFont)
-		logAdd("Bienvenido a Belial 64 (Diablo para Nintendo 64), por Vanar.")
+		logAdd("Bienvenido a Belial 64 v0.8.5 (Diablo para Nintendo 64), por Vanar.")
 		logAdd("1) Busca tu DIABDAT.MPQ.  2) Elige la SD o una carpeta.  3) Pulsa INSTALAR.")
 		logAdd("Se creará la carpeta devilutionx y la ROM belial64.z64. Necesitas un cartucho flash (EverDrive 64 / ED64) y el Expansion Pak.")
 		return 0
@@ -530,7 +530,7 @@ func main() {
 	style := uintptr(wsCaption | wsSysMenu | wsMinimizeBox)
 	r := rect{0, 0, wClient, hClient}
 	call(pAdjustWindowRect, uintptr(unsafe.Pointer(&r)), style, 0)
-	w := call(pCreateWindowExW, 0, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(u16("Belial 64 - Instalador"))),
+	w := call(pCreateWindowExW, 0, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(u16("Belial 64 v0.8.5 - Instalador"))),
 		style, uintptr(0x80000000), uintptr(0x80000000), uintptr(r.right-r.left), uintptr(r.bottom-r.top), 0, 0, hInst, 0)
 	call(pShowWindow, w, 1)
 	call(pUpdateWindow, w)

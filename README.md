@@ -3,6 +3,8 @@
 Port gratuito de **Diablo** para **Nintendo 64**, por **Vanar** ([VanarTechlab](https://www.youtube.com/@VanarTechlab)).
 Basado en [DevilutionX](https://github.com/diasurgical/devilutionX) y hecho con [libdragon](https://github.com/DragonMinded/libdragon).
 
+**Versión actual: 0.8.5** · [Descargar](https://github.com/VanarTechlab/Belial-64/releases)
+
 > **Esta es una versión modificada de DevilutionX.** Ver [MODIFICACIONES.md](MODIFICACIONES.md).
 > Proyecto no oficial hecho por un fan, sin relación con Blizzard Entertainment ni con Nintendo.
 
@@ -29,7 +31,35 @@ la carpeta `devilutionx` (va en la raíz de la SD) y la ROM `belial64.z64`.
 - Música y sonidos desde la SD, copiados a la memoria del cartucho para que carguen rápido.
 - Cinemáticas convertidas a MPEG-1 (logo, intro, finales) y menú para volver a verlas.
 - Idioma español / English.
-- Oro que se recoge solo y cinturón que se rellena solo.
+- Oro que se recoge solo, en un **monedero aparte** (no ocupa casillas del inventario), y cinturón que se rellena solo
+  (en el cinturón solo van pociones).
+- **Todas las misiones** disponibles en cada partida de un jugador.
+- Wirt en el centro del pueblo y Farnham en un sitio nuevo.
+
+## Novedades de la 0.8.5
+
+- **Más estable:** memoria reservada al arrancar para la caché de gráficos, la pantalla de carga, el panel y el cursor.
+  Se acabaron los cuelgues al guardar, al cambiar de piso, al entrar en un portal o al crear un héroe tras jugar.
+- **Más fluido:** las cuevas van más rápidas (el ciclo de colores de la lava ya no rehace una tabla de 128 KiB en cada
+  cuadro); con una tienda, un diálogo o el menú de START abiertos el mundo de detrás se congela y el menú va fluido.
+- **Sonido:** sin música en las pantallas de carga (se entrecortaba), música del menú sin cortes al cambiar de menú,
+  4 efectos a la vez y sin repetir el mismo efecto casi a la vez.
+- Sin registro de diagnóstico en segundo plano: solo si hay un error grave se guardan las últimas líneas en
+  `devilutionx/n64_log.txt` de la SD.
+
+## Controles
+
+| Botón | Acción |
+|---|---|
+| Palanca | Mover al personaje |
+| A | Aceptar / atacar (ataca aunque no haya enemigo) |
+| B | Lanzar el hechizo elegido (con un panel abierto: cerrarlo) |
+| Z / R | Poción de vida / poción de maná |
+| L | Lista rápida de hechizos |
+| Cruceta | Arriba mapa, abajo hechizos, izquierda personaje, derecha inventario (en un panel: moverse por él) |
+| C arriba / C izquierda | Misiones / acción secundaria (cofres, puertas, recoger) |
+| START | Menú de la partida |
+| L + R + C arriba / C abajo | Panel más grande / más pequeño |
 
 ## Código
 
@@ -46,6 +76,10 @@ Rama `main` = DevilutionX + los cambios de Belial 64. Los cambios en el motor es
 | `n64/instalador/` | Instalador para Windows (Go): desempaqueta el MPQ y convierte gráficos, música y cinemáticas |
 
 ## Compilar (Linux / WSL)
+
+El enlazado envuelve varias funciones de la libc (`-Wl,--wrap=malloc,realloc,free,fread,fopen,...`, ver
+`n64/n64.toolchain.cmake`): si rehaces `build-n64` a mano, comprueba que esas opciones siguen en `CMAKE_EXE_LINKER_FLAGS`.
+Para una versión de pruebas con el registro de diagnóstico completo, compila `n64/sdl_n64.c` con `-DN64_RELEASE=0`.
 
 1. Instala el toolchain de libdragon en `/opt/libdragon` (o pon la ruta en `N64_INST`) y libdragon rama
    **preview** (probado con el commit `39d0d60`): `make install tools-install`.

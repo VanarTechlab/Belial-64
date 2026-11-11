@@ -28,6 +28,12 @@
 #define N64_DEBUG 1
 #endif
 
+/* v0.8.5: version para publicar. 1 = sin registro en la SD (solo se guarda si hay un error grave), sin
+   lineas de estado, sin vigilante ni detector de pantalla negra, sin --verbose. 0 = version de pruebas. */
+#ifndef N64_RELEASE
+#define N64_RELEASE 1
+#endif
+static int log_crash; /* hay un error grave: volcar a la SD las ultimas lineas de la pantalla */
 /* ---------------- registro de mensajes (stdout/stderr) ---------------- */
 #define LOG_LINES 24
 #define LOG_COLS 78
@@ -38,14 +44,42 @@ static int log_overlay = 0; /* Z+L+R lo muestra */ /* antes N64_DEBUG */ /* line
 /* copia del registro en sd:/devilutionx/n64_log.txt: las lineas se guardan en un bufer
    y se escriben a la SD como mucho una vez por segundo (n64_log_flush, desde SDL_Flip y
    antes de cerrar). Se cuentan los fallos de escritura para verlos en pantalla. */
+static volatile uint32_t act_ticks; /* f2v79: ultima actividad (linea de registro o fotograma) */
+static volatile uint32_t flip_ticks; /* f2v87: ultimo fotograma (el vigilante mira esto: un bucle de errores
+                                        en el registro ya no lo engana) */
+static volatile int log_flush_pending; /* f2v87: hay una linea importante: volcar a la SD en el siguiente Flip */
+static int log_important(const char *t)
+{
+    return strstr(t, "ERROR") || strstr(t, "Error") || strstr(t, "SIN MEMORIA") || strstr(t, "FALLO") || strstr(t, "GUARDA");
+}
+int n64_heap_free_kib(void);
 static int log_sd;
-static char sd_buf[8192];
+static char sd_buf[16384];
 static int sd_used;
 static unsigned sd_err, sd_lost;
 static int sd_errno;
 #define LOG_SD_PATH "sd:/devilutionx/n64_log.txt"
 void n64_log_flush(void)
 {
+#if N64_RELEASE
+    if (!log_sd) {
+        /* sin registro: solo si hay un error grave, las ultimas lineas (las de la pantalla) */
+        static int dumped;
+        if (!log_crash || dumped)
+            return;
+        dumped = 1;
+        FILE *cf = fopen(LOG_SD_PATH, "w");
+        if (cf) {
+            for (int i = LOG_LINES - 1; i >= 0; i--) {
+                int idx = (log_head - i + LOG_LINES) % LOG_LINES;
+                if (log_buf[idx][0])
+                    fprintf(cf, "%s\n", log_buf[idx]);
+            }
+            fclose(cf);
+        }
+        return;
+    }
+#endif
     static int busy;
     if (!log_sd || sd_used == 0 || busy)
         return;
@@ -72,12 +106,14 @@ void n64_log(const char *fmt, ...);
 void __real_abort(void) __attribute__((noreturn));
 void __wrap_abort(void)
 {
+    log_crash = 1;
     n64_log_flush();
     __real_abort();
 }
 void __real___assert_func(const char *f, int l, const char *fn, const char *e) __attribute__((noreturn));
 void __wrap___assert_func(const char *f, int l, const char *fn, const char *e)
 {
+    log_crash = 1;
     n64_log("ASSERT %s:%d %s: %s", f ? f : "?", l, fn ? fn : "?", e ? e : "?");
     n64_log_flush();
     __real___assert_func(f, l, fn, e);
@@ -93,6 +129,7 @@ void __wrap_debug_assert_func_f(const char *file, int line, const char *func, co
         vsnprintf(m, sizeof m, msg, ap);
         va_end(ap);
     }
+    log_crash = 1;
     n64_log("ASSERTF %s:%d %s: %s | %s", file ? file : "?", line, func ? func : "?", failedexpr ? failedexpr : "?", m);
     n64_log_flush();
     __real_debug_assert_func_f(file, line, func, failedexpr, "%s", m);
@@ -121,6 +158,13 @@ static void log_putc(char c)
 static ssize_t log_write(void *cookie, const char *buf, size_t n)
 {
     (void)cookie;
+    if (n > 0 && n < 400) { /* f2v87: mensajes de error del motor (stderr) */
+        char t[400];
+        memcpy(t, buf, n);
+        t[n] = 0;
+        if (log_important(t))
+            log_flush_pending = 1;
+    }
     for (size_t i = 0; i < n; i++)
         log_putc(buf[i]);
     return (ssize_t)n;
@@ -137,6 +181,35 @@ void n64_log(const char *fmt, ...)
     for (char *p = tmp; *p; p++)
         log_putc(*p);
     log_putc('\n');
+    act_ticks = TICKS_READ();
+    if (log_important(tmp))
+        log_flush_pending = 1;
+}
+
+/* f2v79: diagnostico de cuelgues. n64_paso() anota un paso y lo guarda en la SD al momento;
+   entre n64_zona(1) y n64_zona(0) (guardar partida, cambiar de piso) se anota cada archivo abierto. */
+static volatile int trace_zone;
+static volatile unsigned trace_zone_flip;
+void n64_log_flush(void);
+void n64_paso(const char *fmt, ...);
+void n64_paso(const char *fmt, ...)
+{
+    char t[200];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(t, sizeof t, fmt, ap);
+    va_end(ap);
+    n64_log("PASO %s (libre %d KiB)", t, n64_heap_free_kib());
+    if (!N64_RELEASE)
+        n64_log_flush();
+}
+void n64_zona(int on);
+void n64_zona(int on)
+{
+    if (N64_RELEASE)
+        on = 0;
+    trace_zone = on;
+    trace_zone_flip = 0;
 }
 
 static void log_draw(surface_t *d, int first_line, int max_lines, int y0)
@@ -199,13 +272,132 @@ int access(const char *path, int mode)
 /* ---------------- memoria: avisar cuando malloc falla ----------------
    (se enlaza con -Wl,--wrap=malloc; operator new tambien pasa por aqui) */
 void *__real_malloc(size_t n);
+void __real_free(void *p);
 static size_t mem_low = (size_t)-1; /* minimo de memoria libre visto */
+/* f2v80: BLOQUE GRANDE FIJO. Se reserva una sola vez al arrancar (junto al bloque de la pantalla) y
+   no se suelta nunca: asi la memoria ya no se trocea (f2v79: malloc 199353 FALLO con 739 KiB libres
+   porque la cache de CEL se soltaba y se volvia a pedir con tamanos distintos).
+   Normalmente es la cache de CEL en anillo (segmento 2). Mientras dure una "zona" (n64_big_zone) las
+   reservas grandes se sirven desde el principio de este bloque (como una pila) y el anillo usa solo
+   lo que queda detras: pantalla de carga (sus dos imagenes), capa de menus de 640x480 y bufer del
+   guardado. Al soltarlas el anillo vuelve a ocupar el bloque entero. */
+#define BIG_BLOCK_SIZE (448u * 1024u)
+#define BIG_MAX 8
+static uint8_t *big_block;
+static uint32_t big_top;                    /* bytes usados por los prestamos desde el principio */
+static uint32_t big_off[BIG_MAX], big_len[BIG_MAX];
+static uint8_t big_freed[BIG_MAX];
+static int big_n;                           /* prestamos vivos (incluidos los ya soltados de en medio) */
+static int big_zone_depth;
+/* f2v83: hueco fijo para la capa del panel (640x160 + guardas = 103424 bytes). Se soltaba al cargar cada
+   nivel y se volvia a pedir; con la memoria troceada no habia 101 KiB seguidos (f2v82: hueco mas grande
+   97 KiB) y el panel no salia, al hablar con Griswold pantalla negra. Ahora siempre cae en el mismo sitio. */
+#define PANEL_RESERVE (104u * 1024u)
+static uint8_t *panel_reserve;
+static int panel_reserve_used, panel_zone;
+void n64_panel_zone(int on) { panel_zone = on; }
+/* f2v94: hueco fijo para los graficos del cursor y objetos (data/inv/objcurs.clx, 184656 bytes). Se cargan al
+   empezar cada partida y tambien al crear un heroe en el menu; tras salir de una partida el heap queda troceado
+   (f2v93: 1602 KiB libres pero hueco mas grande 153 KiB -> std::bad_alloc al crear un heroe). */
+#define CURSOR_RESERVE (192u * 1024u)
+static uint8_t *cursor_reserve;
+static int cursor_reserve_used, cursor_zone;
+void n64_cursor_zone(int on) { cursor_zone = on; }
+static unsigned rescue_n; /* f2v94: reservas grandes salvadas por el bloque fijo */
+static unsigned big_served, big_fallback;
+static void big_ring_changed(void);
+static int n64_largest_kib(void);
+void n64_big_zone(int on)
+{
+    if (on)
+        big_zone_depth++;
+    else if (big_zone_depth > 0)
+        big_zone_depth--;
+}
+static int big_owns(const void *p)
+{
+    return big_block && (const uint8_t *)p >= big_block && (const uint8_t *)p < big_block + BIG_BLOCK_SIZE;
+}
+static void *big_alloc(size_t n)
+{
+    if (!big_block || big_n >= BIG_MAX)
+        return NULL;
+    uint32_t off = (big_top + 63u) & ~63u;
+    if ((uint64_t)off + n > BIG_BLOCK_SIZE)
+        return NULL;
+    big_off[big_n] = off;
+    big_len[big_n] = (uint32_t)n;
+    big_freed[big_n] = 0;
+    big_n++;
+    big_top = off + (uint32_t)n;
+    big_served++;
+    big_ring_changed(); /* lo que hubiera ahi del anillo ya no vale */
+    return big_block + off;
+}
+static void big_release(void *p)
+{
+    uint32_t off = (uint32_t)((uint8_t *)p - big_block);
+    for (int i = 0; i < big_n; i++)
+        if (big_off[i] == off && !big_freed[i])
+            big_freed[i] = 1;
+    while (big_n > 0 && big_freed[big_n - 1])
+        big_n--;
+    uint32_t nt = big_n > 0 ? big_off[big_n - 1] + big_len[big_n - 1] : 0;
+    if (nt != big_top) {
+        big_top = nt;
+        big_ring_changed(); /* el anillo puede volver a crecer */
+    }
+}
+void *n64_big_alloc(size_t n) { return big_alloc(n); }
+void __wrap_free(void *p)
+{
+    if (p && p == (void *)panel_reserve) {
+        panel_reserve_used = 0;
+        return;
+    }
+    if (p && p == (void *)cursor_reserve) {
+        cursor_reserve_used = 0;
+        return;
+    }
+    if (p && big_owns(p)) {
+        big_release(p);
+        return;
+    }
+    __real_free(p);
+}
 static unsigned mem_fail_n;
 static int big_alloc_log; /* se activa al entrar en partida (ver SDL_Flip) */
 void *__wrap_malloc(size_t n)
 {
+    if (panel_zone && panel_reserve && !panel_reserve_used && n >= 65536 && n <= PANEL_RESERVE) { /* solo los pixeles, no la cabecera */
+        panel_reserve_used = 1;
+        return panel_reserve;
+    }
+    if (cursor_zone && cursor_reserve && !cursor_reserve_used && n >= 65536 && n <= CURSOR_RESERVE) {
+        cursor_reserve_used = 1;
+        return cursor_reserve;
+    }
+    if (big_zone_depth > 0 && n >= 32768) {
+        void *q = big_alloc(n);
+        if (q) {
+            if (big_alloc_log)
+                n64_log("malloc %u -> bloque fijo (ocupado %u de %u KiB)", (unsigned)n, (unsigned)(big_top / 1024), (unsigned)(BIG_BLOCK_SIZE / 1024));
+            return q;
+        }
+        big_fallback++;
+    }
     void *p = __real_malloc(n);
-    if (n >= 65536 && big_alloc_log) {
+    if (!p && n >= 32768) {
+        /* f2v94: ultimo recurso antes de std::bad_alloc: el bloque fijo, si tiene sitio */
+        p = big_alloc(n);
+        if (p) {
+            rescue_n++;
+            n64_log("malloc %u -> sin hueco en el heap: RESCATADO por el bloque fijo (ocupado %u de %u KiB)", (unsigned)n,
+                (unsigned)(big_top / 1024), (unsigned)(BIG_BLOCK_SIZE / 1024));
+            return p;
+        }
+    }
+    if (!N64_RELEASE && n >= 65536 && big_alloc_log) {
         static int in_log;
         if (!in_log) {
             in_log = 1;
@@ -225,7 +417,8 @@ void *__wrap_malloc(size_t n)
         heap_stats_t hs;
         sys_get_heap_stats(&hs);
         if (mem_fail_n++ < 8)
-            n64_log("SIN MEMORIA: pedidos %u bytes, libres %d KiB", (unsigned)n, (hs.total - hs.used) / 1024);
+            n64_log("SIN MEMORIA: pedidos %u bytes, libres %d KiB, hueco seguido mas grande %d KiB (bloque fijo ocupado %u KiB)",
+                (unsigned)n, (hs.total - hs.used) / 1024, n64_largest_kib(), (unsigned)(big_top / 1024));
     }
     return p;
 }
@@ -233,15 +426,63 @@ void *__wrap_malloc(size_t n)
 void *__real_realloc(void *p, size_t n);
 void *__wrap_realloc(void *p, size_t n)
 {
+    if (p && p == (void *)cursor_reserve) { /* f2v94: no deberia pasar */
+        void *q = __real_malloc(n);
+        if (q) {
+            memcpy(q, p, n < CURSOR_RESERVE ? n : CURSOR_RESERVE);
+            cursor_reserve_used = 0;
+        }
+        return q;
+    }
+    if (p && p == (void *)panel_reserve) { /* f2v83: no deberia pasar */
+        void *q = __real_malloc(n);
+        if (q) {
+            memcpy(q, p, n < PANEL_RESERVE ? n : PANEL_RESERVE);
+            panel_reserve_used = 0;
+        }
+        return q;
+    }
+    if (p && big_owns(p)) { /* f2v80: un prestamo del bloque fijo no se puede agrandar alli */
+        uint32_t off = (uint32_t)((uint8_t *)p - big_block), old = 0;
+        for (int i = 0; i < big_n; i++)
+            if (big_off[i] == off)
+                old = big_len[i];
+        void *q = __wrap_malloc(n);
+        if (q) {
+            memcpy(q, p, old < n ? old : n);
+            big_release(p);
+        }
+        return q;
+    }
     void *r = __real_realloc(p, n);
     if (!r && n) {
         heap_stats_t hs;
         sys_get_heap_stats(&hs);
         if (mem_fail_n++ < 8)
-            n64_log("SIN MEMORIA (realloc): pedidos %u bytes, libres %d KiB", (unsigned)n, (hs.total - hs.used) / 1024);
+            n64_log("SIN MEMORIA (realloc): pedidos %u bytes, libres %d KiB, hueco seguido mas grande %d KiB",
+                (unsigned)n, (hs.total - hs.used) / 1024, n64_largest_kib());
     }
     return r;
 }
+/* f2v80: el hueco seguido mas grande del heap (busqueda binaria pidiendo y soltando; solo para el
+   registro, cuesta unos 15 malloc/free) */
+static int n64_largest_kib(void)
+{
+    heap_stats_t hs;
+    sys_get_heap_stats(&hs);
+    uint32_t lo = 0, hi = (uint32_t)(hs.total - hs.used) / 1024u + 1u; /* en KiB */
+    while (lo + 1 < hi) {
+        uint32_t mid = (lo + hi) / 2;
+        void *t = __real_malloc((size_t)mid * 1024u);
+        if (t) {
+            __real_free(t);
+            lo = mid;
+        } else
+            hi = mid;
+    }
+    return (int)lo;
+}
+int n64_heap_largest_kib(void) { return n64_largest_kib(); }
 int n64_heap_free_kib(void);
 static int heap_free_kib(void);
 int n64_heap_free_kib(void) { return heap_free_kib(); }
@@ -277,7 +518,7 @@ static uint32_t CEL_ARENA = 0;
 #define CEL_ARENA_MAX (480 * 1024)
 #define CEL_KEEP_FREE (340 * 1024) /* f2v33: antes 400 */     /* memoria que se deja libre para el resto del juego */
 #define CEL_TAGS 4096                  /* f2v22: indexada por numero de trozo (pueblo 3547), sin choques */
-static uint8_t *cel_cache;             /* segmento 2 del anillo (reservado al dibujar por primera vez) */
+static uint8_t *cel_cache;             /* segmento 2 del anillo: lo libre del bloque fijo (f2v80) */
 /* f2v24: el anillo puede tener dos trozos de memoria: el segmento 1 es lo que sobra del bloque
    de la pantalla (reservado al arrancar para 640x480; a 400x300 sobran ~187 KiB) y el 2 se
    reserva aparte. CEL_ARENA = tam1 + tam2; un trozo nunca cruza de un segmento a otro. */
@@ -338,18 +579,22 @@ static void rdp_blocks_free(void)
 static void cel_cache_reset(void);
 /* f2v38: al empezar a cargar un nivel se suelta el segmento 2 de la cache (se vuelve a pedir al
    dibujar el nivel nuevo, con la memoria que haya entonces) */
-void n64_cel_cache_release(void)
+/* f2v80: ya NO se suelta memoria (el bloque es fijo): solo se olvida lo guardado y el anillo se vuelve
+   a montar al dibujar, con lo que quede libre del bloque fijo. */
+static void big_ring_changed(void)
 {
-    if (cel_cache) {
-        free(cel_cache);
-        cel_cache = NULL;
-    }
+    cel_cache = NULL;
     cel_seg2_size = 0;
     CEL_ARENA = cel_seg1_size;
     cache_tried = 0;
     cel_cache_reset();
+}
+void n64_cel_cache_release(void)
+{
+    big_ring_changed();
     rdp_blocks_free();
-    n64_log("cache de CEL y bloques del RDP soltados para cargar (libre %d KiB)", heap_free_kib());
+    n64_log("cache de CEL vaciada y bloques del RDP soltados (libre %d KiB, hueco mas grande %d KiB, bloque fijo ocupado %u KiB)",
+        heap_free_kib(), n64_largest_kib(), (unsigned)(big_top / 1024));
 }
 /* f2v22: medidas de tiempo por fotograma (microsegundos acumulados) */
 static unsigned cart_us_acc, sleep_us_acc, logic_us_acc, view_us_acc, blit_us_acc, floor_us_acc, content_us_acc;
@@ -540,24 +785,18 @@ const uint8_t *n64_cel_frame(uint32_t frame, uint32_t offset, uint32_t size)
     /* el segmento 2 de la cache se reserva al dibujar por primera vez (de cada nivel, f2v38) */
     if (!cache_tried) {
         cache_tried = 1;
-        int fk = heap_free_kib();
-        uint32_t want = fk * 1024 > CEL_KEEP_FREE ? (uint32_t)fk * 1024u - CEL_KEEP_FREE : 0;
-        uint32_t total_min = CEL_ARENA_MIN > cel_seg1_size ? CEL_ARENA_MIN - cel_seg1_size : 0;
-        if (want + cel_seg1_size > CEL_ARENA_MAX)
-            want = CEL_ARENA_MAX > cel_seg1_size ? CEL_ARENA_MAX - cel_seg1_size : 0;
-        if (want < total_min)
-            want = total_min;
-        want &= ~16383u;
-        while (!cel_cache && want >= 64 * 1024) {
-            cel_cache = (uint8_t *)memalign(16, want);
-            if (!cel_cache)
-                want -= 32 * 1024;
+        /* f2v80: el segmento 2 es lo que no usan los prestamos del bloque fijo (nada de malloc) */
+        uint32_t from = (big_top + 63u) & ~63u;
+        cel_cache = NULL;
+        cel_seg2_size = 0;
+        if (big_block && from + 16384u <= BIG_BLOCK_SIZE) {
+            cel_cache = big_block + from;
+            cel_seg2_size = (BIG_BLOCK_SIZE - from) & ~15u;
         }
-        cel_seg2_size = cel_cache ? want : 0;
         CEL_ARENA = cel_seg1_size + cel_seg2_size;
         cel_cache_reset();
-        n64_log("cache de CEL en anillo: %u KiB (%u sobrantes de la pantalla + %u aparte; libre antes %d KiB, despues %d KiB)",
-            (unsigned)(CEL_ARENA / 1024), (unsigned)(cel_seg1_size / 1024), (unsigned)(cel_seg2_size / 1024), fk, heap_free_kib());
+        n64_log("cache de CEL en anillo: %u KiB (%u sobrantes de la pantalla + %u del bloque fijo, prestados %u); libre %d KiB",
+            (unsigned)(CEL_ARENA / 1024), (unsigned)(cel_seg1_size / 1024), (unsigned)(cel_seg2_size / 1024), (unsigned)(big_top / 1024), heap_free_kib());
     }
     /* el cartucho se lee en bloques alineados a 8 bytes */
     uint32_t base = offset & ~7u;
@@ -642,6 +881,8 @@ static int music_bits;
 static char music_cur[64];
 static int music_playing;
 static float music_gain = 1.0f;
+static int music_held, music_pending; /* f2v81: sin musica en las pantallas de carga */
+static int music_playing_now(void) { return music_playing; }
 static uint8_t music_bounce[SAMPLEBUFFER_MARGIN_UNITS * 4 + 16] __attribute__((aligned(16)));
 
 static void music_fix(uint8_t *c, int bytes)
@@ -687,6 +928,8 @@ static void ima_decode_block(uint32_t blk)
 }
 
 static unsigned music_read_us, sfx_read_us; /* f2v51 */
+static unsigned sfx_skipped; /* f2v81: efectos no repetidos */
+static int sfx_active_channels(void);
 static void music_read2(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool seeking);
 static void music_read(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool seeking)
 {
@@ -748,10 +991,41 @@ static void music_read2(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, boo
 }
 
 void n64_audio_pump(void);
+static unsigned pump_us_acc; /* f2v81: todo el tiempo del sonido, este donde este */
+/* f2v88: huecos largos sin rellenar el sonido (la musica se corta si pasan mas de ~500 ms): se anota
+   cuanto duro y desde/hasta donde (direcciones para addr2line) */
+static uint32_t pump_last_ticks;
+static void *pump_last_ra;
+static unsigned pump_gaps_logged;
+static int music_playing_now(void);
+__attribute__((noinline)) static void audio_pump_at(void *ra)
+{
+    if (!audio_ready)
+        return;
+    uint32_t t0 = (uint32_t)get_ticks();
+    if (pump_last_ticks && music_playing_now()) {
+        unsigned gap = (unsigned)TICKS_TO_MS(t0 - pump_last_ticks);
+        if (gap >= 300 && pump_gaps_logged < 60) {
+            pump_gaps_logged++;
+            n64_log("musica: %u ms sin rellenar el sonido (desde %08lx hasta %08lx)", gap,
+                (unsigned long)(uintptr_t)pump_last_ra, (unsigned long)(uintptr_t)ra);
+        }
+    }
+    mixer_try_play();
+    pump_last_ticks = (uint32_t)get_ticks();
+    pump_last_ra = ra;
+    pump_us_acc += (unsigned)TICKS_TO_US(pump_last_ticks - t0);
+}
 void n64_audio_pump(void)
 {
-    if (audio_ready)
-        mixer_try_play();
+    audio_pump_at(__builtin_return_address(0));
+}
+/* f2v88: rellenar tambien en las lecturas de sectores de la SD (abrir archivos, carpetas...), como
+   mucho cada 20 ms */
+static void audio_pump_soon(void *ra)
+{
+    if (audio_ready && TICKS_TO_MS((uint32_t)get_ticks() - pump_last_ticks) >= 20)
+        audio_pump_at(ra);
 }
 
 /* f2v25: las lecturas largas de la SD (menus, carga de graficos) bloqueaban la musica.
@@ -790,6 +1064,7 @@ static int disk_rd_fast(void *dram, uint32_t lba, uint32_t count)
 }
 int __wrap_cart_card_rd_dram(void *dram, uint32_t lba, uint32_t count)
 {
+    audio_pump_soon(__builtin_return_address(0)); /* f2v88 */
     if (disk_fast_ok && (((uintptr_t)dram) & 1) == 0) {
         if (disk_rd_fast(dram, lba, count) == 0) {
             disk_fast_sect += count;
@@ -874,7 +1149,7 @@ static size_t fast_fread(uint8_t *dst, size_t len, FILE *f)
             fast_fail++;
             return 0;
         }
-        if (((c - first) / cbytes) % 4 == 3)
+        if (((c - first) / cbytes) % 2 == 1) /* f2v88: cada 2 clusters (antes 4) */
             n64_audio_pump();
     }
     /* de la zona de paso a la RAM (el DMA del PI necesita la misma paridad de direccion) */
@@ -924,10 +1199,14 @@ static unsigned slow_logged;
 FILE *__real_fopen(const char *path, const char *mode);
 FILE *__wrap_fopen(const char *path, const char *mode)
 {
+    if (trace_zone && path && strcmp(path, LOG_SD_PATH) != 0)
+        n64_log("abre %s (%s)", path, mode ? mode : "?");
+    audio_pump_soon(__builtin_return_address(0)); /* f2v88 */
     uint64_t t0 = get_ticks_ms();
     FILE *f = __real_fopen(path, mode);
+    audio_pump_soon(__builtin_return_address(0));
     unsigned ms = (unsigned)(get_ticks_ms() - t0);
-    if (ms >= 100 && slow_logged < 300) {
+    if (!N64_RELEASE && ms >= 100 && slow_logged < 300) {
         slow_logged++;
         n64_log("lento: fopen %u ms %s", ms, path ? path : "?");
     }
@@ -941,7 +1220,7 @@ size_t __wrap_fread(void *ptr, size_t size, size_t n, FILE *f)
     unsigned fr0 = fast_reads;
     size_t r = wrap_fread2(ptr, size, n, f);
     unsigned ms = (unsigned)(get_ticks_ms() - t0);
-    if (ms >= 150 && slow_logged < 300) {
+    if (!N64_RELEASE && ms >= 150 && slow_logged < 300) {
         slow_logged++;
         n64_log("lento: fread %u KiB en %u ms (%s)", (unsigned)(size * n / 1024), ms, fast_reads != fr0 ? "rapida" : "normal");
     }
@@ -994,6 +1273,7 @@ void n64_music_stop(void)
     if (audio_ready && music_playing)
         mixer_ch_stop(MUSIC_CH);
     music_playing = 0;
+    music_pending = 0;
 }
 
 /* copia [0, size) de un archivo abierto a la memoria del cartucho, cluster a cluster */
@@ -1166,9 +1446,36 @@ void n64_music_start(const char *path)
     music_wave.len = music_ima ? (int)music_slot_samples[slot] : (int)(data_len >> music_bps);
     music_wave.loop_len = music_wave.len; /* en bucle, como en el juego */
     music_wave.read = music_read;
+    if (music_held) { /* f2v81: se queda preparada y empieza al acabar la carga */
+        music_pending = 1;
+        n64_log("musica: %s preparada, sonara al acabar la carga", path);
+        return;
+    }
     mixer_ch_play(MUSIC_CH, &music_wave);
     mixer_ch_set_vol(MUSIC_CH, music_gain, music_gain);
     music_playing = 1;
+}
+/* f2v81: durante la pantalla de carga la musica se entrecortaba (la CPU no llega a rellenarla):
+   al empezar a cargar se para, y la del nivel nuevo empieza al terminar. */
+void n64_music_hold(int on);
+void n64_music_hold(int on)
+{
+    if (on) {
+        music_held = 1;
+        if (audio_ready && music_playing) {
+            mixer_ch_stop(MUSIC_CH);
+            music_pending = 1; /* si nadie pide otra, vuelve la misma */
+        }
+        music_playing = 0;
+        return;
+    }
+    music_held = 0;
+    if (music_pending && audio_ready && music_wave.read) {
+        mixer_ch_play(MUSIC_CH, &music_wave);
+        mixer_ch_set_vol(MUSIC_CH, music_gain, music_gain);
+        music_playing = 1;
+    }
+    music_pending = 0;
 }
 
 /* ---------------- tiempo ---------------- */
@@ -1536,8 +1843,16 @@ SDL_Surface *SDL_SetVideoMode(int w, int h, int bpp, Uint32 flags)
         /* f2v24: un solo bloque reservado al arrancar con sitio para 640x480 (antes se liberaba y
            se volvia a pedir, y a 640x480 no habia un hueco seguido de 300 KiB: "sin memoria").
            Lo que sobra detras de la imagen lo usa la cache de CEL (segmento 1). */
-        if (!video_block)
+        if (!video_block) {
             video_block = (Uint8 *)memalign(64, VIDEO_BLOCK); /* f2v53: 64 para que el RDP pueda escribir en ella */
+            if (!big_block) { /* f2v80: bloque fijo (anillo de CEL y prestamos), una sola vez */
+                big_block = (uint8_t *)memalign(64, BIG_BLOCK_SIZE);
+                panel_reserve = (uint8_t *)memalign(64, PANEL_RESERVE); /* f2v83 */
+                cursor_reserve = (uint8_t *)memalign(64, CURSOR_RESERVE); /* f2v94 */
+                n64_log("bloque fijo de %u KiB: %s (libre %d KiB, hueco mas grande %d KiB)", (unsigned)(BIG_BLOCK_SIZE / 1024),
+                    big_block ? "ok" : "FALLO", heap_free_kib(), n64_largest_kib());
+            }
+        }
         if (!video_block) {
             SDL_SetError("sin memoria para la pantalla %dx%d", w, h);
             return NULL;
@@ -1632,6 +1947,8 @@ int SDL_SetColors(SDL_Surface *s, SDL_Color *colors, int first, int n)
 }
 
 static unsigned flip_count;
+static surface_t *volatile wd_surf; /* f2v79: ultima imagen mostrada (para el aviso de cuelgue) */
+static volatile int wd_off;         /* f2v79: sin aviso durante las cinematicas */
 static int level_drawn; /* 1 = ya se mostro el primer fotograma del nivel */
 static int rdp_ready;
 static int rdp_copy_checked, rdp_copy_bad; /* f2v55 */
@@ -1676,10 +1993,41 @@ static char itx_text[256];
 static int itx_r = 255, itx_g = 255, itx_b = 255;
 static rdpq_font_t *itx_font;
 void n64_infotext_set(const char *text, int r, int g, int b);
+/* f2v80: la fuente del RDP solo tiene ASCII: las letras con tilde (UTF-8) se cambian por la letra sin
+   tilde (a e i o u, n por la enie, u por la u con dieresis) y se quitan los signos de apertura ¿ ¡ */
+static void itx_ascii(char *dst, size_t n, const char *src)
+{
+    size_t o = 0;
+    const unsigned char *p = (const unsigned char *)src;
+    while (*p && o + 1 < n) {
+        if (*p < 0x80) {
+            dst[o++] = (char)*p++;
+            continue;
+        }
+        if (*p == 0xC2 && p[1]) { /* ¡ (A1) ¿ (BF): se quitan; el resto de C2 xx tambien */
+            p += 2;
+            continue;
+        }
+        if (*p == 0xC3 && p[1]) {
+            static const char map[64] = /* C3 80..BF -> letra sin tilde */
+                "AAAAAAACEEEEIIII" "DNOOOOOxOUUUUYTs"
+                "aaaaaaaceeeeiiii" "dnooooo/ouuuuyty";
+            char c = map[(p[1] - 0x80) & 63];
+            dst[o++] = c;
+            p += 2;
+            continue;
+        }
+        /* otro caracter de varios bytes: se salta entero */
+        p++;
+        while ((*p & 0xC0) == 0x80)
+            p++;
+        dst[o++] = '?';
+    }
+    dst[o] = 0;
+}
 void n64_infotext_set(const char *text, int r, int g, int b)
 {
-    strncpy(itx_text, text ? text : "", sizeof itx_text - 1);
-    itx_text[sizeof itx_text - 1] = 0;
+    itx_ascii(itx_text, sizeof itx_text, text ? text : "");
     itx_r = r;
     itx_g = g;
     itx_b = b;
@@ -1741,6 +2089,10 @@ static int panel_visible = 1;
 void n64_panel_visible(int visible);
 void n64_panel_visible(int visible) { panel_visible = visible; } /* f2v53: oculto con el menu de START */
 void n64_panel_frame(void) { panel_drawn_this_frame = 1; world_drawn = 1; }
+/* f2v85: el motor no redibujo el mundo (tienda en el pueblo): se muestra la ultima imagen completa */
+void n64_world_skip(void);
+static unsigned world_skipped;
+void n64_world_skip(void) { world_drawn = 0; world_skipped++; }
 static void panel_size_load(void);
 static unsigned panel_serial = 1;
 unsigned n64_panel_serial(void) { return panel_serial; }
@@ -2090,11 +2442,58 @@ int SDL_Flip(SDL_Surface *s)
     } else {
         display_show(d);
     }
+    wd_surf = d;
+    act_ticks = TICKS_READ();
+    flip_ticks = act_ticks;
+    /* f2v87: lineas importantes (errores, sin memoria) a la SD enseguida, aqui que es seguro */
+    if (log_flush_pending) {
+        log_flush_pending = 0;
+        n64_log_flush();
+    }
+    /* f2v87: detector de pantalla negra en partida: paleta toda negra o la imagen mostrada toda de
+       colores negros durante 6 s -> se anota, se guarda el registro y se pinta encima (como Z+L+R) */
+    if (!N64_RELEASE && big_alloc_log && video_pixels && video_w > 0 && video_w < 640) { /* f2v93: solo en partida (menus y cargas van a 640x480 y se quedan en negro unos segundos al cargar) */
+        static uint64_t black_since;
+        static int black_alerted;
+        int lit = 0;
+        for (int i = 0; i < 256 && !lit; i++)
+            lit = (pal16[i] & 0xFFFE) != 0;
+        int black = !lit;
+        if (!black) {
+            const Uint8 *px = last_drawn_px ? last_drawn_px : video_pixels;
+            int nonblack = 0;
+            for (int k = 0; k < 64 && !nonblack; k++) {
+                int x = (k % 8) * video_w / 8 + video_w / 16, y = (k / 8) * video_h / 8 + video_h / 16;
+                nonblack = (pal16[px[y * video_w + x]] & 0xFFFE) != 0;
+            }
+            black = !nonblack;
+        }
+        const uint64_t now = get_ticks_ms();
+        if (!black) {
+            black_since = 0;
+            if (black_alerted)
+                log_overlay = 0; /* f2v93: la imagen volvio: se quita el registro de encima */
+            black_alerted = 0;
+        } else if (!black_since) {
+            black_since = now;
+        } else if (!black_alerted && now - black_since > 6000) {
+            black_alerted = 1;
+            n64_log("PANTALLA NEGRA: %s desde hace 6 s (paleta %s, libre %d KiB, hueco mas grande %d KiB, modo %dx%d, mundo %s)",
+                lit ? "la imagen es toda negra" : "la paleta es toda negra", lit ? "normal" : "negra", heap_free_kib(),
+                n64_largest_kib(), video_w, video_h, world_drawn ? "dibujado" : "sin dibujar");
+            n64_log_flush();
+            log_overlay = 1;
+        }
+    }
+    if (trace_zone && ++trace_zone_flip == 60) { /* f2v79: 60 fotogramas tras guardar o cargar: fin de la zona */
+        trace_zone = 0;
+        n64_paso("juego en marcha otra vez");
+    }
     world_drawn = 0;
     flip_count++;
-    if ((flip_count & 63) == 0) /* f2v31: antes en cada fotograma */
+    if (!N64_RELEASE && (flip_count & 63) == 0) /* f2v31: antes en cada fotograma */
         n64_check_guards("Flip");
-    if (CEL_ARENA >= 8192 && level_drawn < 300) {
+    if (!N64_RELEASE && CEL_ARENA >= 8192 && level_drawn < 300) {
         /* primeros fotogramas del nivel: una linea por fotograma, guardada al momento */
         level_drawn++;
         if (level_drawn <= 5) { /* (f2v21) antes cada 20 fotogramas: escribir en la SD daba tirones */
@@ -2111,6 +2510,7 @@ int SDL_Flip(SDL_Surface *s)
         fps_shown = fps_frames;
         flip_us_shown = fps_frames ? flip_us_acc / fps_frames : 0;
         game_us_shown = fps_frames ? game_us_acc / fps_frames : 0;
+#if !N64_RELEASE
         static unsigned secs;
         if ((++secs % 10) == 0) {
             unsigned nf = fps_frames ? fps_frames : 1;
@@ -2134,6 +2534,11 @@ int SDL_Flip(SDL_Surface *s)
         }
         if ((secs % 10) == 0 && prof_acc[20]) {
             unsigned nf2 = prof_acc[20];
+            int ach = sfx_active_channels();
+            n64_log("f2v81: sonido en total %u ms por cuadro, ciclo de colores %u decimas de ms por cuadro, efectos no repetidos %u, canales sonando ahora %d; f2v85: cuadros con el mundo congelado %u",
+                pump_us_acc / nf2 / 1000, prof_acc[35] / nf2 / 100, sfx_skipped, ach, world_skipped);
+            world_skipped = 0;
+            pump_us_acc = 0;
             n64_log("dibujo por cuadro (decimas de ms): paredes %u, mapa %u; suelo copiado en %u cuadros y dibujado en %u; copias del RDP comprobadas %d, mal %d; borrados comprobados %d, mal %d; minimapa redibujado %u veces",
                 prof_acc[29] / nf2 / 100, prof_acc[30] / nf2 / 100, prof_acc[27], prof_acc[28], rdp_copy_checked, rdp_copy_bad, rdp_fill_checked, rdp_fill_bad, prof_acc[31]);
             n64_log("suelo desplazado: %u cuadros (casillas redibujadas %u por cuadro), impar o sin poder %u; ritmo: imagenes de 2 refrescos %u, de 3 %u, de 4 %u, de 5 o mas %u, espera %u ms por cuadro, objetivo %d",
@@ -2143,6 +2548,10 @@ int SDL_Flip(SDL_Surface *s)
         }
         if ((secs % 10) == 0)
             memset(prof_acc, 0, sizeof prof_acc);
+#else
+        memset(prof_acc, 0, sizeof prof_acc);
+        pump_us_acc = 0;
+#endif
         cart_us_acc = sleep_us_acc = logic_us_acc = view_us_acc = blit_us_acc = 0;
         music_read_us = sfx_read_us = 0;
         wb_us_acc = sub_us_acc = snd_us_acc = floor_us_acc = content_us_acc = 0;
@@ -2417,7 +2826,7 @@ static void poll_pad(void)
             panel_size_change(+1);
     }
     /* Z + L + R: mostrar/ocultar el registro sobre la imagen */
-    if ((bits & ((1 << 2) | (1 << 10) | (1 << 11))) == ((1 << 2) | (1 << 10) | (1 << 11))
+    if (!N64_RELEASE && (bits & ((1 << 2) | (1 << 10) | (1 << 11))) == ((1 << 2) | (1 << 10) | (1 << 11))
         && (changed & ((1 << 2) | (1 << 10) | (1 << 11))))
         log_overlay = !log_overlay;
 }
@@ -2475,6 +2884,7 @@ static void redirect_std(void)
    en su lugar se muestran los ultimos mensajes y se queda ahi */
 static void on_exit_show_log(void)
 {
+    log_crash = 1;
     n64_log_flush();
     log_overlay = 0;
     for (;;)
@@ -2500,6 +2910,7 @@ static void n64_exception_handler(exception_t *ex)
     static int inside;
     if (!inside) {
         inside = 1;
+        log_crash = 1;
         n64_log("ERROR DE CPU: %s", ex->info ? ex->info : "?");
         n64_log("  pc %08lx ra %08lx sp %08lx dir %08lx", (unsigned long)ex->regs->epc, (unsigned long)ex->regs->ra,
             (unsigned long)ex->regs->sp, (unsigned long)C0_BADVADDR());
@@ -2509,6 +2920,61 @@ static void n64_exception_handler(exception_t *ex)
         n64_log_flush();
     }
     exception_default_handler(ex);
+}
+
+/* f2v79: vigilante. Cada segundo (interrupcion del temporizador) apunta donde estaba la CPU;
+   si pasan 10 s sin fotogramas ni lineas de registro, escribe encima de la ultima imagen
+   las direcciones y las ultimas lineas del registro (para hacer una foto). */
+extern void *interrupt_exception_frame;
+static uint32_t wd_pc[8], wd_ra[8];
+static unsigned wd_n;
+static void wd_hex(char *o, uint32_t v)
+{
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 0; i < 8; i++)
+        o[i] = hx[(v >> (28 - 4 * i)) & 15];
+    o[8] = 0;
+}
+static void wd_cb(int ovfl)
+{
+    (void)ovfl;
+    uint32_t fr = (uint32_t)interrupt_exception_frame;
+    if (fr) {
+        reg_block_t *r = (reg_block_t *)(fr + 32);
+        wd_pc[wd_n & 7] = r->epc;
+        wd_ra[wd_n & 7] = (uint32_t)r->gpr[31];
+        wd_n++;
+    }
+    if (wd_off || !wd_surf)
+        return;
+    int32_t idle = TICKS_DISTANCE(flip_ticks, TICKS_READ()) / TICKS_PER_SECOND; /* f2v87: sin fotogramas */
+    if (idle < 10 || (idle & 1))
+        return;
+    surface_t *d = wd_surf;
+    char line[100], h[12];
+    graphics_draw_box(d, 0, 0, d->width, 44, graphics_make_color(120, 0, 0, 255));
+    graphics_set_color(graphics_make_color(255, 255, 255, 255), 0);
+    strcpy(line, "BELIAL 64 CONGELADO - HAZ UNA FOTO DE ESTO  (s: ");
+    int n = (int)strlen(line);
+    line[n++] = (char)('0' + (idle / 100) % 10);
+    line[n++] = (char)('0' + (idle / 10) % 10);
+    line[n++] = (char)('0' + idle % 10);
+    line[n++] = ')';
+    line[n] = 0;
+    graphics_draw_text(d, 4, 2, line);
+    for (int k = 0; k < 2; k++) {
+        strcpy(line, k ? "ra" : "pc");
+        for (int i = 0; i < 6; i++) {
+            unsigned idx = (wd_n - 1 - (unsigned)i) & 7;
+            wd_hex(h, k ? wd_ra[idx] : wd_pc[idx]);
+            strcat(line, " ");
+            strcat(line, h);
+        }
+        graphics_draw_text(d, 4, 14 + k * 12, line);
+    }
+    graphics_draw_box(d, 0, 44, d->width, d->height - 44, graphics_make_color(0, 0, 40, 255));
+    log_draw(d, 0, (d->height - 50) / 9, 48);
+    data_cache_hit_writeback_invalidate(d->buffer, (unsigned long)d->stride * d->height);
 }
 
 static int engine_thread(void *arg)
@@ -2545,7 +3011,7 @@ int n64_main(int argc, char **argv, int (*fn)(int, char **))
     n64_sfx_init();
     audio_ready = 1;
     rdp_ready = 1;
-    n64_log("Belial 64 (DevilutionX) - fase 2 v78 (sin parpadeo en menus) - Vanar");
+    n64_log("Belial 64 (DevilutionX) - v0.8.5 - Vanar");
     n64_log("RAM: %d KiB, Expansion Pak: %s", get_memory_size() / 1024, is_memory_expanded() ? "SI" : "NO");
     log_screen("Belial 64 - arrancando...");
     if (!is_memory_expanded()) {
@@ -2563,6 +3029,7 @@ int n64_main(int argc, char **argv, int (*fn)(int, char **))
     struct stat st;
     if (stat("sd:/devilutionx", &st) != 0)
         mkdir("sd:/devilutionx", 0777);
+#if !N64_RELEASE
     {
         FILE *f = fopen(LOG_SD_PATH, "w");
         if (f) {
@@ -2576,6 +3043,7 @@ int n64_main(int argc, char **argv, int (*fn)(int, char **))
             log_sd = 1;
         }
     }
+#endif
     n64_log("2/6 SD OK (registro en sd:/devilutionx/n64_log.txt). comprobando carpetas...");
     n64_disk_fast_test();
     log_screen("Belial 64 - arrancando...");
@@ -2598,6 +3066,10 @@ int n64_main(int argc, char **argv, int (*fn)(int, char **))
     redirect_std();
     atexit(on_exit_show_log);
     register_exception_handler(n64_exception_handler);
+    timer_init();
+#if !N64_RELEASE
+    new_timer(TIMER_TICKS(1000000), TF_CONTINUOUS, wd_cb); /* f2v79: vigilante de cuelgues */
+#endif
     n64_log("5/6 arrancando el motor (puede tardar minutos)...");
     log_screen("Belial 64 - arrancando...");
 
@@ -2606,7 +3078,9 @@ int n64_main(int argc, char **argv, int (*fn)(int, char **))
         "--data-dir", "sd:/devilutionx/",
         "--save-dir", "sd:/devilutionx/saves/",
         "--config-dir", "sd:/devilutionx/saves/",
+#if !N64_RELEASE
         "--verbose",
+#endif
         NULL
     };
     n_argc = (int)(sizeof args / sizeof args[0]) - 1; /* f2v65 */
@@ -2974,7 +3448,8 @@ void n64_mon_log(void)
 #define SFX_CART_END 0x12000000u
 #define SFX_FILES 320
 #define SFX_FIRST_CH 1
-#define SFX_LAST_CH 7
+#define SFX_LAST_CH 4 /* f2v86: 4 efectos a la vez (f2v81: 5, antes 7): mezclar cuesta por canal */
+#define SFX_REPEAT_MS 120 /* f2v81: el mismo efecto no se vuelve a empezar si empezo hace menos */
 typedef struct {
     char name[72];
     uint32_t pcm;      /* direccion en el cartucho de la primera muestra */
@@ -2990,11 +3465,19 @@ typedef struct {
     int file;            /* -1 libre */
     waveform_t wave;
     uint32_t started;    /* para quitar el mas viejo si no hay canal libre */
+    uint32_t start_ms;   /* f2v81 */
     /* f2v52: trozo del WAV ya leido del cartucho (antes un DMA cada 128 muestras) */
     uint32_t blk_off, blk_len;
     uint8_t blk[SFX_BLK + 16] __attribute__((aligned(16)));
 } sfx_chan_t;
 static sfx_chan_t sfx_ch[8];
+static int sfx_active_channels(void)
+{
+    int n = 0;
+    for (int c = SFX_FIRST_CH; c <= SFX_LAST_CH; c++)
+        n += sfx_ch[c].file >= 0 && mixer_ch_playing(c);
+    return n;
+}
 static uint32_t sfx_serial;
 
 static void sfx_fix(uint8_t *c, int bytes, int bits)
@@ -3004,7 +3487,12 @@ static void sfx_fix(uint8_t *c, int bytes, int bits)
         for (int i = 0; i < bytes / 2; i++)
             p[i] = __builtin_bswap16(p[i]);
     } else {
-        for (int i = 0; i < bytes; i++)
+        /* f2v81: de 4 en 4 bytes (el bloque esta alineado a 16) */
+        uint32_t *w = (uint32_t *)c;
+        int i = 0;
+        for (; i + 4 <= bytes; i += 4)
+            *w++ ^= 0x80808080u;
+        for (; i < bytes; i++)
             c[i] ^= 0x80;
     }
 }
@@ -3122,8 +3610,17 @@ static void cine_mark_seen(const char *path)
         fclose(f);
     }
 }
+static int n64_play_movie_impl(const char *path, int canSkip);
 int n64_play_movie(const char *path, int canSkip);
 int n64_play_movie(const char *path, int canSkip)
+{
+    wd_off = 1;
+    int r = n64_play_movie_impl(path, canSkip);
+    act_ticks = TICKS_READ();
+    wd_off = 0;
+    return r;
+}
+static int n64_play_movie_impl(const char *path, int canSkip)
 {
     FILE *f = fopen(path, "rb");
     if (!f) {
@@ -3308,6 +3805,16 @@ int n64_sfx_play(const char *path, float left, float right)
     const int fi = sfx_load(path);
     if (fi < 0)
         return 0;
+    /* f2v81: el mismo efecto otra vez casi a la vez (rayos, golpes de varios monstruos): no se oye la
+       diferencia y ocupaba canales; se deja sonando el que ya estaba */
+    {
+        const uint32_t now = (uint32_t)get_ticks_ms();
+        for (int c = SFX_FIRST_CH; c <= SFX_LAST_CH; c++)
+            if (sfx_ch[c].file == fi && mixer_ch_playing(c) && now - sfx_ch[c].start_ms < SFX_REPEAT_MS) {
+                sfx_skipped++;
+                return 1;
+            }
+    }
     /* canal libre, o el que lleva mas tiempo sonando */
     int best = -1;
     uint32_t oldest = 0xFFFFFFFFu;
@@ -3341,6 +3848,7 @@ int n64_sfx_play(const char *path, float left, float right)
     ch->blk_off = 0;
     ch->blk_len = 0;
     ch->started = ++sfx_serial;
+    ch->start_ms = (uint32_t)get_ticks_ms();
     mixer_ch_play(best, &ch->wave);
     mixer_ch_set_vol(best, left, right);
     sfx_played++;
