@@ -113,6 +113,7 @@ namespace {
 constexpr int N64PanelLayerRows = 160;
 constexpr int N64PanelRow = 32;
 extern "C" void n64_panel_zone(int on);
+extern "C" void n64_rumble_health(int pct, int active); // v0.8.6
 extern "C" void n64_world_skip(void); // f2v85
 unsigned N64WorldFrozenFrames = 0;
 SDL_Surface *n64PanelSurface;
@@ -2375,6 +2376,10 @@ void DrawAndBlit()
 	{
 		void N64PouchSync(Player &player); // f2v89: el oro no ocupa casillas
 		N64PouchSync(*MyPlayer);
+		// v0.8.6: latido con menos del 30 % de vida (no con el menu de START ni en pausa)
+		const int64_t n64MaxHp = std::max<int64_t>(1, MyPlayer->_pMaxHP.raw());
+		n64_rumble_health(static_cast<int>(std::max<int64_t>(0, MyPlayer->_pHitPoints.raw()) * 100 / n64MaxHp),
+		    !gmenu_is_active() && PauseMode == 0 && !MyPlayerIsDead ? 1 : 0);
 	}
 #endif
 

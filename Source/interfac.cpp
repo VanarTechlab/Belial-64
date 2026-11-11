@@ -691,6 +691,7 @@ void CompleteProgress()
 extern "C" void n64_cel_cache_release(void);
 extern "C" void n64_big_zone(int on);
 extern "C" void n64_music_hold(int on);
+extern "C" void n64_rumble_stop(void);
 void CalcViewportGeometry();
 void N64FreePanelLayer();
 #endif
@@ -703,6 +704,7 @@ void ShowProgress(interface_mode uMsg)
 	n64_cel_cache_release();
 	N64UseLoadingResolution(true);
 	n64_music_hold(1); // f2v81: sin musica en la pantalla de carga (se entrecortaba)
+	n64_rumble_stop(); // v0.8.6
 #endif
 	IsProgress = true;
 	gbSomebodyWonGameKludge = false;

@@ -2685,6 +2685,10 @@ void StartPlrHit(Player &player, Fixed26_6 dam, bool forcehit)
 	SetPlayerOld(player);
 }
 
+#ifdef __N64__
+extern "C" void n64_rumble_hit(int pct);
+extern "C" void n64_rumble_death(void);
+#endif
 void StartPlayerKill(Player &player, DeathReason deathReason)
 {
 	if (player.hasNoLife() && player._pmode == PM_DEATH) {
@@ -2694,6 +2698,9 @@ void StartPlayerKill(Player &player, DeathReason deathReason)
 	if (&player == MyPlayer) {
 		NetSendCmdParam1(true, CMD_PLRDEAD, static_cast<uint16_t>(deathReason));
 		gamemenu_off();
+#ifdef __N64__
+		n64_rumble_death(); // v0.8.6
+#endif
 	}
 
 	const bool dropGold = !gbIsMultiplayer || !(player.isOnLevel(16) || player.isOnArenaLevel());
@@ -2872,6 +2879,13 @@ void ApplyPlrDamage(DamageType damageType, Player &player, Fixed26_6 dam, int mi
 		return;
 
 	RedrawComponent(PanelDrawComponent::Health);
+#ifdef __N64__
+	if (&player == MyPlayer && totalDamage > 0) {
+		// v0.8.6: vibracion al recibir un golpe (mas larga si quita mucha vida)
+		const int64_t n64Max = std::max<int64_t>(1, player._pMaxHP.raw());
+		n64_rumble_hit(static_cast<int>(static_cast<int64_t>(totalDamage.raw()) * 100 / n64Max));
+	}
+#endif
 	player._pHitPoints -= totalDamage;
 	player._pHPBase -= totalDamage;
 	if (player._pHitPoints > player._pMaxHP) {
