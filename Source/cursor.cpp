@@ -438,11 +438,20 @@ int pcurstemp;
 /** Index of current cursor image */
 int pcurs;
 
+#ifdef __N64__
+extern "C" void n64_cursor_zone(int on);
+#endif
 void InitCursor()
 {
 	assert(!pCursCels);
 #ifdef UNPACKED_MPQS
+#ifdef __N64__
+	n64_cursor_zone(1); // f2v94: siempre en su hueco fijo (sdl_n64.c)
 	pCursCels = LoadClx("data\\inv\\objcurs.clx");
+	n64_cursor_zone(0);
+#else
+	pCursCels = LoadClx("data\\inv\\objcurs.clx");
+#endif
 	pCursCels2 = LoadOptionalClx("data\\inv\\objcurs2.clx");
 #else
 	pCursCels = LoadCel("data\\inv\\objcurs", ReadWidths(FindAsset("data\\inv\\objcurs-widths.txt")).data());
