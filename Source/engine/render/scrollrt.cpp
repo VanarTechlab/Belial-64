@@ -112,6 +112,7 @@ namespace {
 // panel logico), desplazadas para caer en esta capa.
 constexpr int N64PanelLayerRows = 160;
 constexpr int N64PanelRow = 32;
+extern "C" void n64_panel_zone(int on);
 SDL_Surface *n64PanelSurface;
 Surface N64PanelOut(const Surface &out)
 {
@@ -120,7 +121,9 @@ Surface N64PanelOut(const Surface &out)
 	if (gnScreenWidth >= GetMainPanel().size.width)
 		return out;
 	if (n64PanelSurface == nullptr) {
+		n64_panel_zone(1); // f2v83: siempre en su hueco fijo (sdl_n64.c)
 		n64PanelSurface = SDL_CreateRGBSurface(0, 640, N64PanelLayerRows, 8, 0, 0, 0, 0);
+		n64_panel_zone(0);
 		if (n64PanelSurface == nullptr)
 			return out;
 		memset(n64PanelSurface->pixels, 0, static_cast<size_t>(n64PanelSurface->pitch) * N64PanelLayerRows);
