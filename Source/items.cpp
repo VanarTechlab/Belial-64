@@ -4209,8 +4209,15 @@ void PrintItemDur(const Item &item)
 	PrintItemInfo(item);
 }
 
+#ifdef __N64__
+extern "C" void n64_paso(const char *fmt, ...);
+#endif
 void UseItem(Player &player, item_misc_id mid, SpellID spellID, int spellFrom)
 {
+#ifdef __N64__
+	if (&player == MyPlayer)
+		n64_paso("usar objeto: tipo %d, hechizo %d", static_cast<int>(mid), static_cast<int>(spellID)); // f2v87: diagnostico
+#endif
 	std::optional<SpellID> prepareSpellID;
 
 	switch (mid) {
