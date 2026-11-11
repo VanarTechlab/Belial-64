@@ -1759,7 +1759,10 @@ void DrawView(const Surface &out, Point startPosition)
 	// se dibuja una vez y despues se congela: se vuelve a mostrar esa imagen completa (sdl_n64.c) y solo
 	// cambia la capa de la interfaz. Antes las tiendas iban a 6-10 fps (la cache de CEL queda pequena).
 	static bool n64FreezeReady = false;
-	const bool n64Freeze = leveltype == DTYPE_TOWN && N64UiMode && N64UiStoreOnly() && !MyPlayerIsDead;
+	// f2v91: tambien con el menu de START en un jugador, en cualquier sitio: el juego esta en pausa
+	// (diablo.cpp no avanza la logica con gmenu_is_active()), asi que el mundo no cambia
+	const bool n64Freeze = !MyPlayerIsDead && N64UiMode
+	    && ((leveltype == DTYPE_TOWN && N64UiStoreOnly()) || (!gbIsMultiplayer && gmenu_is_active()));
 	const bool n64SkipWorld = n64Freeze && n64FreezeReady;
 	n64FreezeReady = n64Freeze;
 	if (n64SkipWorld) {
