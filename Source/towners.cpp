@@ -753,6 +753,60 @@ size_t GetNumTowners()
 	return Towners.size();
 }
 
+#ifdef __N64__
+// v0.9.0: "!" encima de los aldeanos que tienen una mision nueva para darte (las mismas condiciones con
+// las que cada uno la empieza al hablar con el, ver TalkTo...).
+bool N64TownerHasQuest(const Towner &towner)
+{
+	if (MyPlayer == nullptr)
+		return false;
+	const Player &player = *MyPlayer;
+	const auto visited = [&](int a, int b) { return player._pLvlVisited[a] || player._pLvlVisited[b]; };
+	switch (towner._ttype) {
+	case TOWN_TAVERN: {
+		const Quest &king = Quests[Q_SKELKING];
+		if (king._qactive != QUEST_NOTAVAIL && visited(2, 4) && king._qvar2 == 0)
+			return true;
+		const Quest &banner = Quests[Q_LTBANNER];
+		return banner._qactive != QUEST_NOTAVAIL && banner._qactive != QUEST_DONE && visited(3, 4) && banner._qvar2 == 0;
+	}
+	case TOWN_DEADGUY: {
+		const Quest &q = Quests[Q_BUTCHER];
+		return q._qactive != QUEST_NOTAVAIL && q._qactive != QUEST_DONE && q._qvar1 != 1;
+	}
+	case TOWN_SMITH: {
+		const Quest &rock = Quests[Q_ROCK];
+		if (rock._qactive != QUEST_NOTAVAIL && rock._qactive != QUEST_DONE && visited(4, 5) && rock._qvar2 == 0)
+			return true;
+		const Quest &anvil = Quests[Q_ANVIL];
+		return anvil._qactive != QUEST_NOTAVAIL && anvil._qactive != QUEST_DONE && visited(9, 10) && anvil._qvar2 == 0;
+	}
+	case TOWN_HEALER: {
+		const Quest &q = Quests[Q_PWATER];
+		return (q._qactive == QUEST_INIT && visited(1, 5)) || (q._qactive == QUEST_ACTIVE && !q._qlog);
+	}
+	case TOWN_STORY: {
+		const Quest &q = Quests[Q_BETRAYER];
+		return (q._qactive == QUEST_INIT && HasInventoryItemWithId(player, IDI_LAZSTAFF)) || (q._qactive == QUEST_ACTIVE && !q._qlog);
+	}
+	case TOWN_WITCH:
+		return Quests[Q_MUSHROOM]._qactive == QUEST_INIT && HasInventoryItemWithId(player, IDI_FUNGALTM);
+	case TOWN_BMAID:
+		return !player._pLvlVisited[21] && HasInventoryItemWithId(player, IDI_MAPOFDOOM) && Quests[Q_GRAVE]._qmsg != TEXT_GRAVE8;
+	case TOWN_FARMER: {
+		const Quest &q = Quests[Q_FARMER];
+		return (q._qactive == QUEST_INIT || q._qactive == QUEST_NOTAVAIL) && (player._pLvlVisited[9] || player.getCharacterLevel() >= 15);
+	}
+	case TOWN_GIRL: {
+		const Quest &q = Quests[Q_GIRL];
+		return q._qactive == QUEST_INIT || q._qactive == QUEST_NOTAVAIL;
+	}
+	default:
+		return false;
+	}
+}
+#endif
+
 bool IsTownerPresent(_talker_id npc)
 {
 	switch (npc) {

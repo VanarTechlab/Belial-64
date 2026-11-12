@@ -289,6 +289,9 @@ void N64FreePanelLayer()
 }
 #endif
 
+#ifdef __N64__
+bool N64TownerHasQuest(const Towner &towner); // towners.cpp, v0.9.0
+#endif
 enum OutlineColors : uint8_t {
 	OutlineColorsPlayer1 = (PAL16_ORANGE + 7),
 	OutlineColorsPlayer2 = (PAL16_YELLOW + 7),
@@ -948,6 +951,12 @@ void DrawMonsterHelper(const Surface &out, Point tilePosition, Point targetBuffe
 			ClxDrawOutlineSkipColorZero(out, OutlineColorsTowner, position, sprite);
 		}
 		ClxDraw(out, position, sprite);
+#ifdef __N64__
+		if (N64TownerHasQuest(towner)) { // v0.9.0: "!" de mision, como en Hellspawn
+			DrawString(out, "!", Rectangle { Point { position.x, position.y - sprite.height() - 6 }, Size { sprite.width(), 26 } },
+			    { .flags = UiFlags::AlignCenter | UiFlags::ColorGold | UiFlags::FontSize24 });
+		}
+#endif
 		return;
 	}
 
