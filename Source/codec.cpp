@@ -89,6 +89,21 @@ void XorBlock(const uint32_t *shaResult, uint32_t *out)
 
 } // namespace
 
+#ifdef __N64__
+void codec_decode_first_block(std::byte *block64, const char *pszPassword)
+{
+	uint32_t buf[BlockSize];
+	uint32_t dst[SHA1HashSize];
+	SHA1Context context = CodecInitKey(pszPassword);
+	memcpy(buf, block64, BlockSizeBytes);
+	ByteSwapBlock(buf);
+	SHA1Result(context, dst);
+	XorBlock(dst, buf);
+	ByteSwapBlock(buf);
+	memcpy(block64, buf, BlockSizeBytes);
+}
+#endif
+
 std::size_t codec_decode(std::byte *pbSrcDst, std::size_t size, const char *pszPassword)
 {
 	uint32_t buf[BlockSize];

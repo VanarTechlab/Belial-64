@@ -261,6 +261,27 @@ bool ArchiveContainsGame(SaveReader &hsArchive)
 	if (gbIsMultiplayer)
 		return false;
 
+#if defined(__N64__) && defined(UNPACKED_SAVES)
+	// N64 v0.9.0 prueba 20: en el menu se leia el guardado entero (213 KiB) solo para mirar 4 bytes.
+	// Con la memoria troceada no habia 213 KiB seguidos -> SIN MEMORIA. Ahora se leen 64 bytes.
+	{
+		const std::string path = hsArchive.dir() + "game";
+		uintmax_t size;
+		if (!GetFileSize(path.c_str(), &size) || size <= 8 || (size - 8) % 64 != 0)
+			return false;
+		FILE *file = OpenFile(path.c_str(), "rb");
+		if (file == nullptr)
+			return false;
+		std::byte block[64];
+		const bool ok = std::fread(block, sizeof(block), 1, file) == 1;
+		std::fclose(file);
+		if (!ok)
+			return false;
+		codec_decode_first_block(block, pfile_get_password());
+		return IsHeaderValid(LoadLE32(block));
+	}
+#endif
+
 	auto gameData = ReadArchive(hsArchive, "game");
 	if (gameData == nullptr)
 		return false;
