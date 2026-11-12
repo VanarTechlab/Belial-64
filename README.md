@@ -3,7 +3,7 @@
 Port gratuito de **Diablo** para **Nintendo 64**, por **Vanar** ([VanarTechlab](https://www.youtube.com/@VanarTechlab)).
 Basado en [DevilutionX](https://github.com/diasurgical/devilutionX) y hecho con [libdragon](https://github.com/DragonMinded/libdragon).
 
-**Versión actual: 0.8.5** · [Descargar](https://github.com/VanarTechlab/Belial-64/releases)
+**Versión actual: 0.9.5** · [Descargar](https://github.com/VanarTechlab/Belial-64/releases)
 
 > **Esta es una versión modificada de DevilutionX.** Ver [MODIFICACIONES.md](MODIFICACIONES.md).
 > Proyecto no oficial hecho por un fan, sin relación con Blizzard Entertainment ni con Nintendo.
@@ -35,6 +35,26 @@ la carpeta `devilutionx` (va en la raíz de la SD) y la ROM `belial64.z64`.
   (en el cinturón solo van pociones).
 - **Todas las misiones** disponibles en cada partida de un jugador.
 - Wirt en el centro del pueblo y Farnham en un sitio nuevo.
+- Dos misiones nuevas traídas de **Hellspawn** (el port de Vanar para Nintendo DSi): la guarida del Carnicero y las Luces del Bosque.
+- Vibración con **Rumble Pak**.
+
+## Novedades de la 0.9.5
+
+- **Misión de la guarida del Carnicero**, con su escena oculta (el instalador la saca de tu `DIABDAT.MPQ`: es un vídeo
+  que el juego original guarda pero no usa) y frases de los héroes que nunca se usaron ("What was that?").
+- **Misión de las Luces del Bosque**: entrada al oeste del pueblo (nivel 18), súcubos y Andariel ("Time to die").
+  Al terminarla, el bosque queda vacío y en paz. Dos árboles nuevos junto a la entrada.
+- **"!"** encima de los aldeanos que tienen una misión para ti.
+- **Gillian guarda y devuelve tu oro** (Guardar oro / Sacar oro en su menú).
+- Montones de oro de hasta **60000** en el monedero: ya no sale "inventario lleno" con casillas libres.
+- **Vibración con Rumble Pak**: golpes según el daño, muerte y latido del corazón desde el 50 % de vida (más fuerte
+  cuanto menos vida). No vibra al guardar.
+- **Pueblo más ligero**: los aldeanos, la vaca y las ventanas del alijo y de la tienda se leen de la memoria del
+  cartucho; más memoria libre y menos bajones de fps. La búsqueda de objetivo cuerpo a cuerpo cuesta un tercio.
+- **Más estable**: arreglados los cuelgues (pantalla azul o negra) tras volver varias veces al menú (la lista de héroes
+  leía el guardado entero, 213 KiB, solo para mirar 4 bytes), los números denormales de la FPU que paraban la consola y
+  los límites del mezclador de sonido.
+- Probado de principio a fin: se puede terminar el juego, con la pelea contra Diablo fluida y la cinemática final.
 
 ## Novedades de la 0.8.5
 
@@ -73,11 +93,11 @@ Rama `main` = DevilutionX + los cambios de Belial 64. Los cambios en el motor es
 | `n64/n64.toolchain.cmake` | Toolchain de CMake (libdragon) |
 | `n64/compilar_sdl.sh`, `n64/configurar.sh`, `n64/compilar.sh` | Scripts de compilación |
 | `n64/traduccion/` | Traducción al español (`es_n64.po` = la de DevilutionX + textos de Belial 64) y `msgfmt.py` |
-| `n64/instalador/` | Instalador para Windows (Go): desempaqueta el MPQ y convierte gráficos, música y cinemáticas |
+| `n64/instalador/` | Instalador para Windows (Go): desempaqueta el MPQ y convierte gráficos, música, cinemáticas y la escena oculta del Carnicero |
 
 ## Compilar (Linux / WSL)
 
-El enlazado envuelve varias funciones de la libc (`-Wl,--wrap=malloc,realloc,free,fread,fopen,...`, ver
+El enlazado envuelve varias funciones de la libc (`-Wl,--wrap=malloc,realloc,free,memalign,fread,fopen,...`, ver
 `n64/n64.toolchain.cmake`): si rehaces `build-n64` a mano, comprueba que esas opciones siguen en `CMAKE_EXE_LINKER_FLAGS`.
 Para una versión de pruebas con el registro de diagnóstico completo, compila `n64/sdl_n64.c` con `-DN64_RELEASE=0`.
 
@@ -104,7 +124,7 @@ de DevilutionX en `datos\devilutionx\assets`.
 
 ## Créditos
 
-- **Vanar**: port a Nintendo 64.
+- **Vanar**: port a Nintendo 64 (y las misiones nuevas, de su port Hellspawn para DSi).
 - **DevilutionX Team**: el motor.
 - **libdragon** (Giovanni Bajo, Rasky y colaboradores): el SDK de N64.
 - **Blizzard North**: creadores de Diablo.
@@ -114,5 +134,6 @@ Las donaciones son voluntarias y no desbloquean nada: <https://vanar-techlab-sho
 ---
 
 *English:* Free, non-commercial port of Diablo (DevilutionX) to Nintendo 64 (Expansion Pak + EverDrive 64 required).
-Bring your own `DIABDAT.MPQ`. This is a modified version of DevilutionX; see `MODIFICACIONES.md`.
+Bring your own `DIABDAT.MPQ`. v0.9.5 adds the Butcher's lair and Forest Lights quests, quest markers,
+gold storage, Rumble Pak support and stability fixes. This is a modified version of DevilutionX; see `MODIFICACIONES.md`.
 Unofficial fan project, not affiliated with or endorsed by Blizzard Entertainment or Nintendo.

@@ -205,15 +205,49 @@ const cineVF = "scale=320:144:flags=lanczos:out_color_matrix=bt601:out_range=tv,
 const cineMatrix = "8,16,22,26,30,35,40,48,16,16,26,28,32,35,40,48,22,26,30,32,35,40,48,56,26,28,32,35,40,48,56,64," +
 	"30,32,35,40,48,56,64,80,35,35,40,48,56,64,80,96,40,40,48,56,64,80,96,128,48,48,56,64,80,128,128,150"
 
-func convertCine(o *Options, ffmpeg, diabdat, dst string) (int, error) {
-	gendata := findCI(diabdat, "gendata")
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return 0, err
-	}
+// convertOneCine convierte un .smk de 320x156 a .m1v (+ .wav si tiene sonido) como videoconv64
+func convertOneCine(o *Options, ffmpeg, src, dst, name string) error {
 	tmpLog := filepath.Join(os.TempDir(), "belial64_pass")
 	null := "/dev/null"
 	if exeSuffix != "" {
 		null = "NUL"
+	}
+	base := []string{"-hide_banner", "-v", "error", "-y", "-i", src, "-an", "-vf", cineVF,
+		"-c:v", "mpeg1video", "-b:v", "800k", "-maxrate", "800k", "-bufsize", "640k", "-bf", "2",
+		"-trellis", "2", "-mbd", "rd", "-cmp", "rd", "-subcmp", "rd", "-intra_matrix", cineMatrix}
+	out := filepath.Join(dst, name+".m1v")
+	p1 := append(append([]string{}, base...), "-pass", "1", "-passlogfile", tmpLog, "-f", "null", null)
+	p2 := append(append([]string{}, base...), "-pass", "2", "-passlogfile", tmpLog, "-f", "mpeg1video", out)
+	if err := runTool(o, ffmpeg, p1...); err != nil {
+		return fmt.Errorf("ffmpeg fallo con %s (paso 1): %v", name, err)
+	}
+	if err := runTool(o, ffmpeg, p2...); err != nil {
+		return fmt.Errorf("ffmpeg fallo con %s (paso 2): %v", name, err)
+	}
+	os.Remove(tmpLog + "-0.log")
+	os.Remove(tmpLog + "-0.log.mbtree")
+	// como videoconv64: proporcion de pixel 12:13 (320x156 -> 320x144) como user_data al principio
+	if data, err := os.ReadFile(out); err == nil {
+		hdr := append([]byte{0, 0, 1, 0xB2}, []byte("LD_SAR=12:13\n")...)
+		if err := os.WriteFile(out, append(hdr, data...), 0o644); err != nil {
+			return err
+		}
+	}
+	// sonido (loopdend no tiene)
+	wav := filepath.Join(dst, name+".wav")
+	os.Remove(wav)
+	_ = runTool(o, ffmpeg, "-hide_banner", "-v", "quiet", "-y", "-i", src, "-vn", "-ac", "1", "-ar", "22050",
+		"-c:a", "adpcm_ima_wav", wav)
+	if st, err := os.Stat(wav); err == nil && st.Size() < 100 {
+		os.Remove(wav)
+	}
+	return nil
+}
+
+func convertCine(o *Options, ffmpeg, diabdat, dst string) (int, error) {
+	gendata := findCI(diabdat, "gendata")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return 0, err
 	}
 	n := 0
 	for i, name := range cineNames {
@@ -223,41 +257,95 @@ func convertCine(o *Options, ffmpeg, diabdat, dst string) (int, error) {
 			continue
 		}
 		o.logf("    cinemática %s (%d de %d)", name, i+1, len(cineNames))
-		base := []string{"-hide_banner", "-v", "error", "-y", "-i", src, "-an", "-vf", cineVF,
-			"-c:v", "mpeg1video", "-b:v", "800k", "-maxrate", "800k", "-bufsize", "640k", "-bf", "2",
-			"-trellis", "2", "-mbd", "rd", "-cmp", "rd", "-subcmp", "rd", "-intra_matrix", cineMatrix}
-		out := filepath.Join(dst, name+".m1v")
-		p1 := append(append([]string{}, base...), "-pass", "1", "-passlogfile", tmpLog, "-f", "null", null)
-		p2 := append(append([]string{}, base...), "-pass", "2", "-passlogfile", tmpLog, "-f", "mpeg1video", out)
-		if err := runTool(o, ffmpeg, p1...); err != nil {
-			return n, fmt.Errorf("ffmpeg fallo con %s (paso 1): %v", name, err)
-		}
-		if err := runTool(o, ffmpeg, p2...); err != nil {
-			return n, fmt.Errorf("ffmpeg fallo con %s (paso 2): %v", name, err)
-		}
-		os.Remove(tmpLog + "-0.log")
-		os.Remove(tmpLog + "-0.log.mbtree")
-		// como videoconv64: proporcion de pixel 12:13 (320x156 -> 320x144) como user_data al principio
-		if data, err := os.ReadFile(out); err == nil {
-			hdr := append([]byte{0, 0, 1, 0xB2}, []byte("LD_SAR=12:13\n")...)
-			if err := os.WriteFile(out, append(hdr, data...), 0o644); err != nil {
-				return n, err
-			}
-		}
-		// sonido (loopdend no tiene)
-		wav := filepath.Join(dst, name+".wav")
-		os.Remove(wav)
-		_ = runTool(o, ffmpeg, "-hide_banner", "-v", "quiet", "-y", "-i", src, "-vn", "-ac", "1", "-ar", "22050",
-			"-c:a", "adpcm_ima_wav", wav)
-		if st, err := os.Stat(wav); err == nil && st.Size() < 100 {
-			os.Remove(wav)
+		if err := convertOneCine(o, ffmpeg, src, dst, name); err != nil {
+			return n, err
 		}
 		n++
 		if o.Progress != nil {
-			o.Progress(70 + (i+1)*25/len(cineNames))
+			o.Progress(70 + (i+1)*23/len(cineNames))
 		}
 	}
 	return n, nil
+}
+
+func rd32(b []byte) uint32 {
+	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
+}
+
+// extractHidden busca en el DIABDAT.MPQ el video que el juego original no usa (escena del Carnicero:
+// SMK2 de 320x156 con 77 fotogramas; esta guardado sin comprimir y sin nombre, por eso el
+// desempaquetador no lo saca) y lo copia a dstSmk. Igual que extract_hidden de Hellspawn.
+func extractHidden(mpq string, frames uint32, dstSmk string) error {
+	f, err := os.Open(mpq)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	const chunk = 1 << 20
+	buf := make([]byte, chunk+64)
+	keep := 0
+	var base int64
+	pos := int64(-1)
+	for pos < 0 {
+		n, rerr := io.ReadFull(f, buf[keep:keep+chunk])
+		total := keep + n
+		for i := 0; i+20 <= total; i++ {
+			if buf[i] != 'S' || string(buf[i:i+4]) != "SMK2" {
+				continue
+			}
+			if rd32(buf[i+4:]) == 320 && rd32(buf[i+8:]) == 156 && rd32(buf[i+12:]) == frames {
+				pos = base + int64(i)
+				break
+			}
+		}
+		if rerr != nil || n == 0 {
+			break
+		}
+		keep = 19
+		if total < keep {
+			keep = total
+		}
+		copy(buf, buf[total-keep:total])
+		base += int64(total - keep)
+	}
+	if pos < 0 {
+		return errors.New("no esta en este MPQ")
+	}
+	hdr := make([]byte, 104)
+	if _, err := f.ReadAt(hdr, pos); err != nil {
+		return err
+	}
+	fr := rd32(hdr[12:])
+	trees := rd32(hdr[52:])
+	sizes := make([]byte, 4*fr)
+	if _, err := f.ReadAt(sizes, pos+104); err != nil {
+		return err
+	}
+	tot := int64(104) + 5*int64(fr) + int64(trees)
+	for j := uint32(0); j < fr; j++ {
+		tot += int64(rd32(sizes[j*4:]) &^ 3)
+	}
+	if tot > 20<<20 {
+		return errors.New("tamaño del video no valido")
+	}
+	data := make([]byte, tot)
+	if _, err := f.ReadAt(data, pos); err != nil {
+		return err
+	}
+	return os.WriteFile(dstSmk, data, 0o644)
+}
+
+// convertButcher saca y convierte la escena oculta del Carnicero (mision de la guarida)
+func convertButcher(o *Options, ffmpeg, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	tmp := filepath.Join(os.TempDir(), "belial64_carnicero.smk")
+	defer os.Remove(tmp)
+	if err := extractHidden(o.MPQ, 77, tmp); err != nil {
+		return err
+	}
+	return convertOneCine(o, ffmpeg, tmp, dst, "carnicero")
 }
 
 // Run hace toda la preparacion
@@ -340,6 +428,15 @@ func Run(o *Options) error {
 		o.logf("    %d cinemáticas", nc)
 	} else {
 		o.Log("[5/6] Cinemáticas: no (se pueden añadir después volviendo a instalar)")
+	}
+	cineDir := filepath.Join(n64, "cine")
+	if o.MPQ != "" {
+		o.Log("    escena oculta del Carnicero (misión de la guarida)...")
+		if err := convertButcher(o, ffmpeg, cineDir); err != nil {
+			o.logf("    AVISO: no se pudo sacar la escena del Carnicero (%v); la misión funciona igual, sin vídeo", err)
+		}
+	} else if !fileExists(filepath.Join(cineDir, "carnicero.m1v")) {
+		o.Log("    (escena del Carnicero: elige tu DIABDAT.MPQ para sacarla)")
 	}
 	prog(95)
 

@@ -35,6 +35,9 @@
 #endif
 static int log_crash; /* hay un error grave: volcar a la SD las ultimas lineas de la pantalla */
 /* ---------------- registro de mensajes (stdout/stderr) ---------------- */
+#ifndef N64_WATCH_ADDR
+#define N64_WATCH_ADDR 0x803CA580u /* v0.9.0: Mixer.limits[2] (ver nm) */
+#endif
 #define LOG_LINES 24
 #define LOG_COLS 78
 static char log_buf[LOG_LINES][LOG_COLS + 1];
@@ -191,9 +194,11 @@ void n64_log(const char *fmt, ...)
 static volatile int trace_zone;
 static volatile unsigned trace_zone_flip;
 void n64_log_flush(void);
+static int paso_follow; /* v0.8.6 prueba 5: tras un PASO se anotan los siguientes fotogramas */
 void n64_paso(const char *fmt, ...);
 void n64_paso(const char *fmt, ...)
 {
+    paso_follow = 40; /* v0.9.0: mas fotogramas tras un paso (cuelgue tras los elixires) */
     char t[200];
     va_list ap;
     va_start(ap, fmt);
@@ -349,6 +354,75 @@ static void big_release(void *p)
     }
 }
 void *n64_big_alloc(size_t n) { return big_alloc(n); }
+/* v0.9.0 (solo DIAG): registro de las reservas de 1 KiB o mas que siguen vivas, con quien las pidio, para
+   encontrar lo que trocea la memoria (MEDIDO: tras volver al menu varias veces quedaban 1646 KiB libres pero
+   el hueco mas grande era de 171 KiB). n64_heap_dump() las escribe ordenadas por direccion. */
+#if !N64_RELEASE
+#define TRK_MAX 4000
+static struct { uint32_t p, n, ra1, ra2; } trk[TRK_MAX];
+static int trk_n, trk_busy;
+void *__real_malloc(size_t n);
+void __real_free(void *p);
+static void trk_add(void *p, size_t n)
+{
+    if (!p || n < 256 || trk_busy || trk_n >= TRK_MAX)
+        return;
+    trk_busy = 1;
+    void *bt[6];
+    int k = backtrace(bt, 6);
+    trk[trk_n].p = (uint32_t)(uintptr_t)p;
+    trk[trk_n].n = (uint32_t)n;
+    trk[trk_n].ra1 = k > 3 ? (uint32_t)(uintptr_t)bt[3] : 0;
+    trk[trk_n].ra2 = k > 4 ? (uint32_t)(uintptr_t)bt[4] : 0;
+    trk_n++;
+    trk_busy = 0;
+}
+static void trk_del(void *p)
+{
+    if (!p)
+        return;
+    const uint32_t a = (uint32_t)(uintptr_t)p;
+    for (int i = trk_n - 1; i >= 0; i--)
+        if (trk[i].p == a) {
+            trk[i] = trk[--trk_n];
+            return;
+        }
+}
+static int trk_cmp(const void *a, const void *b)
+{
+    const uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return x < y ? -1 : x > y;
+}
+static int n64_largest_kib(void);
+static int heap_free_kib(void);
+void n64_log_flush(void);
+void n64_heap_dump(const char *tag);
+void n64_heap_dump(const char *tag)
+{
+    qsort(trk, (size_t)trk_n, sizeof trk[0], trk_cmp);
+    n64_log("MEMORIA %s: libre %d KiB, hueco mas grande %d KiB, %d reservas de 256 B o mas vivas:", tag, heap_free_kib(), n64_largest_kib(), trk_n);
+    for (int i = 0; i < trk_n; i++) {
+        n64_log("  %08lx %6lu B  %08lx %08lx", (unsigned long)trk[i].p, (unsigned long)trk[i].n, (unsigned long)trk[i].ra1, (unsigned long)trk[i].ra2);
+        if ((i % 40) == 39)
+            n64_log_flush();
+    }
+    n64_log_flush();
+}
+#else
+#define trk_add(p, n) ((void)0)
+#define trk_del(p) ((void)0)
+void n64_heap_dump(const char *tag);
+void n64_heap_dump(const char *tag) { (void)tag; }
+#endif
+/* v0.9.0: memalign tambien pasa por aqui (--wrap=memalign) para poder apuntarla en el diagnostico */
+void *__real_memalign(size_t a, size_t n);
+void *__wrap_memalign(size_t a, size_t n);
+void *__wrap_memalign(size_t a, size_t n)
+{
+    void *p = __real_memalign(a, n);
+    trk_add(p, n);
+    return p;
+}
 void __wrap_free(void *p)
 {
     if (p && p == (void *)panel_reserve) {
@@ -363,6 +437,7 @@ void __wrap_free(void *p)
         big_release(p);
         return;
     }
+    trk_del(p);
     __real_free(p);
 }
 static unsigned mem_fail_n;
@@ -387,6 +462,7 @@ void *__wrap_malloc(size_t n)
         big_fallback++;
     }
     void *p = __real_malloc(n);
+    trk_add(p, n);
     if (!p && n >= 32768) {
         /* f2v94: ultimo recurso antes de std::bad_alloc: el bloque fijo, si tiene sitio */
         p = big_alloc(n);
@@ -455,6 +531,10 @@ void *__wrap_realloc(void *p, size_t n)
         return q;
     }
     void *r = __real_realloc(p, n);
+    if (r) {
+        trk_del(p);
+        trk_add(r, n);
+    }
     if (!r && n) {
         heap_stats_t hs;
         sys_get_heap_stats(&hs);
@@ -930,6 +1010,13 @@ static void ima_decode_block(uint32_t blk)
 static unsigned music_read_us, sfx_read_us; /* f2v51 */
 static unsigned sfx_skipped; /* f2v81: efectos no repetidos */
 static int sfx_active_channels(void);
+/* v0.9.0: MEDIDO una pantalla azul por "frequency 22050 exceeds configured limit 240 on channel 2": el
+   limite del canal (guardado dentro de libdragon) aparecio pisado. Antes de cada mixer_ch_play se vuelve
+   a poner el limite normal (si ya estaba bien no hace nada) */
+static void mixer_fix_limits(int ch)
+{
+    mixer_ch_set_limits(ch, 16, 0, 0);
+}
 static void music_read2(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool seeking);
 static void music_read(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool seeking)
 {
@@ -998,10 +1085,12 @@ static uint32_t pump_last_ticks;
 static void *pump_last_ra;
 static unsigned pump_gaps_logged;
 static int music_playing_now(void);
+static void rumble_apply(void);
 __attribute__((noinline)) static void audio_pump_at(void *ra)
 {
     if (!audio_ready)
         return;
+    rumble_apply(); /* v0.9.0: tambien durante lecturas largas */
     uint32_t t0 = (uint32_t)get_ticks();
     if (pump_last_ticks && music_playing_now()) {
         unsigned gap = (unsigned)TICKS_TO_MS(t0 - pump_last_ticks);
@@ -1451,6 +1540,7 @@ void n64_music_start(const char *path)
         n64_log("musica: %s preparada, sonara al acabar la carga", path);
         return;
     }
+    mixer_fix_limits(MUSIC_CH);
     mixer_ch_play(MUSIC_CH, &music_wave);
     mixer_ch_set_vol(MUSIC_CH, music_gain, music_gain);
     music_playing = 1;
@@ -1471,6 +1561,7 @@ void n64_music_hold(int on)
     }
     music_held = 0;
     if (music_pending && audio_ready && music_wave.read) {
+        mixer_fix_limits(MUSIC_CH);
         mixer_ch_play(MUSIC_CH, &music_wave);
         mixer_ch_set_vol(MUSIC_CH, music_gain, music_gain);
         music_playing = 1;
@@ -1478,11 +1569,107 @@ void n64_music_hold(int on)
     music_pending = 0;
 }
 
+/* ---------------- vibracion (Rumble Pak), v0.8.6 ----------------
+   Golpe: vibracion corta (mas larga si el golpe quita mucha vida). Muerte: larga. Con menos del 30 %
+   de vida: latido de corazon cada segundo (dos pulsos, "pum-pum"). Nunca en menus, cargas ni cinematicas
+   (resolucion de 640x480) ni con el menu de START. Sin Rumble Pak no hace nada. */
+static int video_w, video_h; /* v0.8.6: declaracion adelantada (se definen abajo) */
+/* v0.8.6 prueba 3: un temporizador del sistema cada 10 ms maneja el motor (independiente de los fps).
+   El motor solo es encendido/apagado: la intensidad se simula encendiendolo 2, 3, 4 o 5 de cada
+   5 ciclos de 10 ms. Latido desde el 50 % de vida: 50-40 suave, 40-30 media, 30-20 fuerte,
+   20 o menos maxima (igual que al 10 %). Golpes y muerte siempre a maxima. */
+#define RUMBLE_TICK_MS 10
+static volatile int rumble_on;
+static volatile int rumble_want;
+static volatile uint64_t rumble_until, hb_t0, rumble_flip_ms;
+static volatile int hb_level; /* 0 = sin latido, 1..4 = fuerza simulada (encendido 2..5 de cada 5 ciclos) */
+static unsigned rumble_tick;
+static void rumble_set(int on)
+{
+    if (on == rumble_on)
+        return;
+    if (!joypad_get_rumble_supported(JOYPAD_PORT_1)) {
+        rumble_on = 0;
+        return;
+    }
+    joypad_set_rumble_active(JOYPAD_PORT_1, on != 0);
+    rumble_on = on;
+}
+void n64_rumble_hit(int pct);
+void n64_rumble_hit(int pct)
+{
+    const uint64_t now = get_ticks_ms();
+    const unsigned dur = pct >= 20 ? 450 : (pct >= 8 ? 320 : 220);
+    if (now + dur > rumble_until)
+        rumble_until = now + dur;
+}
+void n64_rumble_death(void);
+void n64_rumble_death(void)
+{
+    rumble_until = get_ticks_ms() + 900;
+    hb_level = 0;
+}
+void n64_rumble_health(int pct, int active);
+void n64_rumble_health(int pct, int active)
+{
+    int lvl = 0;
+    if (active && pct > 0 && pct < 50)
+        lvl = pct >= 40 ? 1 : (pct >= 30 ? 2 : (pct > 20 ? 3 : 4));
+    if (lvl && !hb_level)
+        hb_t0 = get_ticks_ms();
+    hb_level = lvl;
+}
+void n64_rumble_stop(void);
+void n64_rumble_stop(void)
+{
+    disable_interrupts();
+    rumble_until = 0;
+    hb_level = 0;
+    rumble_want = 0;
+    rumble_set(0);
+    enable_interrupts();
+}
+/* se llama desde la interrupcion del temporizador */
+static void rumble_timer_cb(int ovfl)
+{
+    (void)ovfl;
+    rumble_tick++;
+    if (video_w >= 640) { /* menus, pantallas de carga */
+        rumble_until = 0;
+        hb_level = 0;
+    }
+    const uint64_t now = get_ticks_ms();
+    int want = 0;
+    /* si no se muestra un fotograma hace mas de 200 ms (guardando, cargando, juego parado) se apaga */
+    if (now - rumble_flip_ms > 200)
+        want = 0;
+    else if (now < rumble_until)
+        want = 1;
+    else if (hb_level) {
+        const unsigned t = (unsigned)((now - hb_t0) % 1000u);
+        const int beat = t < 120 || (t >= 240 && t < 340); /* pum ... pum */
+        if (beat)
+            want = (int)(rumble_tick % 5u) < hb_level + 1;
+    }
+    rumble_want = want; /* v0.9.0: el motor se cambia fuera de la interrupcion (rumble_apply) */
+}
+/* v0.9.0: las ordenes al mando (joybus) ya no se mandan desde la interrupcion del temporizador: si la cola
+   del joybus se llenaba alli, libdragon paraba la consola sin poder avisar (SUPUESTO, cuelgues tras elixires) */
+static void rumble_apply(void)
+{
+    rumble_set(rumble_want);
+}
+static void rumble_start_timer(void)
+{
+    new_timer(TICKS_FROM_MS(RUMBLE_TICK_MS), TF_CONTINUOUS, rumble_timer_cb);
+}
+
 /* ---------------- tiempo ---------------- */
 static unsigned yield_cnt;
 Uint32 SDL_GetTicks(void)
 {
     if ((++yield_cnt & 31) == 0) {
+        rumble_apply(); /* v0.9.0 */
         n64_audio_pump();
         kthread_yield();
     }
@@ -1560,7 +1747,6 @@ static int rdp_sp_valid;
 static rspq_syncpoint_t rdp_sp;
 static Uint8 *video_block;
 #define VIDEO_BLOCK (640u * 480u + 2u * SURF_GUARD)
-static int video_w, video_h;
 int n64_check_guards(const char *where)
 {
     int bad = 0;
@@ -2357,9 +2543,11 @@ int SDL_Flip(SDL_Surface *s)
                 const int by = y + (int)((float)(panel_row0 + 46 - top + 2) * scy + 0.5f);
                 const int bw = (int)((float)(288 - 12) * scx + 0.5f);
                 const int bh = (int)((float)(64 - 4) * scy + 0.5f);
+                if (bw >= 32 && bh >= 8 && bw <= 640 && bh <= 480) { /* v0.9.0: tamanos raros = no se escribe */
                 rdpq_set_mode_standard();
                 rdpq_textparms_t tp = { .width = (int16_t)bw, .height = (int16_t)bh, .align = ALIGN_CENTER, .valign = VALIGN_CENTER, .wrap = WRAP_WORD };
                 rdpq_text_print(&tp, 1, (float)bx, (float)by, itx_text);
+                }
             }
         }
         panel_drawn_this_frame = 0;
@@ -2444,6 +2632,13 @@ int SDL_Flip(SDL_Surface *s)
     }
     wd_surf = d;
     act_ticks = TICKS_READ();
+    rumble_flip_ms = get_ticks_ms();
+    rumble_apply(); /* v0.9.0 */
+    if (!N64_RELEASE && paso_follow > 0) { /* v0.8.6 prueba 5: saber si el juego sigue dibujando */
+        paso_follow--;
+        n64_log("PASO fotograma mostrado (quedan %d), libre %d KiB, hueco mas grande %d KiB", paso_follow, n64_heap_free_kib(), n64_largest_kib());
+        n64_log_flush();
+    }
     flip_ticks = act_ticks;
     /* f2v87: lineas importantes (errores, sin memoria) a la SD enseguida, aqui que es seguro */
     if (log_flush_pending) {
@@ -2650,6 +2845,10 @@ typedef struct {
 
 static int thread_tramp(void *arg)
 {
+    /* v0.9.0: los hilos nuevos de libdragon empiezan con FCR31 = 0 (sin el bit FS que pone el arranque):
+       un numero de coma flotante denormal paraba la consola ("pantalla azul", MEDIDO en rdpq_font al
+       escribir la caja de texto). Con FS se redondea a 0 como en el hilo principal */
+    C1_WRITE_FCR31(C1_FCR31() | C1_FCR31_FS);
     N64Thread *t = (N64Thread *)arg;
     redirect_std();
     t->result = t->fn(t->data);
@@ -2905,9 +3104,56 @@ static unsigned stack_used_kib(void)
 }
 
 /* errores de CPU: anotar en el registro y guardarlo en la SD antes de la pantalla de libdragon */
+/* v0.9.5: la FPU de la N64 no sabe operar con numeros denormales (muy cercanos a 0) y para la consola
+   aunque este puesto el bit FS (FS solo redondea los RESULTADOS, no los numeros que entran).
+   MEDIDO (v0.9.5, tras ~30 min): "Invalid floating point value (denormal)" en rdpq_tex_blit (draw_cb).
+   Red de seguridad: si la instruccion que fallo es de la FPU, sus operandos denormales se cambian por 0
+   (con su signo) y se repite la instruccion. Un 0 en vez de 1e-39 no se nota en pantalla. */
+static unsigned fpu_denormal_fixed;
+static int fpu_fix_denormal(exception_t *ex)
+{
+    if (ex->code != EXCEPTION_CODE_FLOATING_POINT || !(ex->regs->fc31 & C1_CAUSE_NOT_IMPLEMENTED))
+        return 0;
+    if (fpu_denormal_fixed > 100000u)
+        return 0;
+    uint32_t pc = ex->regs->epc;
+    if (ex->regs->cr & 0x80000000u) /* en el hueco de un salto: la instruccion esta detras */
+        pc += 4;
+    if ((pc & 3u) || pc < 0x80000000u || pc >= 0x80800000u)
+        return 0;
+    const uint32_t ins = *(volatile uint32_t *)(uintptr_t)pc;
+    if ((ins >> 26) != 0x11u) /* no es una instruccion de la FPU */
+        return 0;
+    const uint32_t fmt = (ins >> 21) & 31u, ft = (ins >> 16) & 31u, fs = (ins >> 11) & 31u;
+    int fixed = 0;
+    const uint32_t regs2[2] = { fs, ft };
+    for (int i = 0; i < 2; i++) {
+        uint64_t r = ex->regs->fpr[regs2[i]];
+        if (fmt == 16u) { /* .s: los 32 bits de abajo */
+            const uint32_t v = (uint32_t)r;
+            if ((v & 0x7F800000u) == 0 && (v & 0x007FFFFFu) != 0) {
+                ex->regs->fpr[regs2[i]] = (r & 0xFFFFFFFF00000000ull) | (v & 0x80000000u);
+                fixed = 1;
+            }
+        } else if (fmt == 17u) { /* .d */
+            if ((r & 0x7FF0000000000000ull) == 0 && (r & 0x000FFFFFFFFFFFFFull) != 0) {
+                ex->regs->fpr[regs2[i]] = r & 0x8000000000000000ull;
+                fixed = 1;
+            }
+        }
+    }
+    if (!fixed)
+        return 0;
+    ex->regs->fc31 &= ~(0x3Fu << 12); /* borrar las causas para que no salte otra vez */
+    fpu_denormal_fixed++;
+    return 1;
+}
+
 static void n64_exception_handler(exception_t *ex)
 {
     static int inside;
+    if (fpu_fix_denormal(ex))
+        return; /* se repite la instruccion con el operando en 0 */
     if (!inside) {
         inside = 1;
         log_crash = 1;
@@ -2948,7 +3194,29 @@ static void wd_cb(int ovfl)
     if (wd_off || !wd_surf)
         return;
     int32_t idle = TICKS_DISTANCE(flip_ticks, TICKS_READ()) / TICKS_PER_SECOND; /* f2v87: sin fotogramas */
-    if (idle < 10 || (idle & 1))
+    /* v0.9.0: a los 12 s congelado se intenta guardar en la SD lo que se sabe (direcciones del codigo donde
+       estaba el juego en cada segundo), aunque sea desde la interrupcion: el juego ya esta perdido */
+    static int wd_dumped;
+    if (idle >= 12 && !wd_dumped) {
+        wd_dumped = 1;
+        audio_ready = 0; /* que fopen no toque el sonido desde aqui */
+        char hx[12];
+        char l1[120] = "CONGELADO: pc";
+        char l2[120] = "CONGELADO: ra";
+        for (int i = 0; i < 8; i++) {
+            unsigned idx = (wd_n - 1 - (unsigned)i) & 7;
+            wd_hex(hx, wd_pc[idx]);
+            strcat(l1, " ");
+            strcat(l1, hx);
+            wd_hex(hx, wd_ra[idx]);
+            strcat(l2, " ");
+            strcat(l2, hx);
+        }
+        n64_log("%s", l1);
+        n64_log("%s", l2);
+        n64_log_flush();
+    }
+    if (idle < 6 || (idle & 1))
         return;
     surface_t *d = wd_surf;
     char line[100], h[12];
@@ -2980,6 +3248,10 @@ static void wd_cb(int ovfl)
 static int engine_thread(void *arg)
 {
     (void)arg;
+    /* v0.9.0: los hilos nuevos de libdragon empiezan con FCR31 = 0 (sin el bit FS que pone el arranque):
+       un numero de coma flotante denormal paraba la consola ("pantalla azul", MEDIDO en rdpq_font al
+       escribir la caja de texto). Con FS se redondea a 0 como en el hilo principal */
+    C1_WRITE_FCR31(C1_FCR31() | C1_FCR31_FS);
     {
         /* pintar la pila libre (por debajo de aqui) para medir luego cuanto se usa */
         volatile uint8_t marca = 0;
@@ -3011,7 +3283,18 @@ int n64_main(int argc, char **argv, int (*fn)(int, char **))
     n64_sfx_init();
     audio_ready = 1;
     rdp_ready = 1;
-    n64_log("Belial 64 (DevilutionX) - v0.8.5 - Vanar");
+#if !N64_RELEASE
+    /* v0.9.0: cazar la memoria pisada. MEDIDO: el limite del canal 2 del mezclador (dentro de libdragon) aparecio
+       pisado. Se pone un "punto de vigilancia" de la CPU (registro WatchLo) sobre esos 8 bytes: si alguien los
+       escribe salta una excepcion y el registro anota quien (pc y ra). La direccion sale del .elf (nm: Mixer +
+       3184 + 2*12) y hay que revisarla si cambia el tamano del codigo. */
+    {
+        const uint32_t watch = N64_WATCH_ADDR & 0x1FFFFFF8u; /* direccion fisica, de 8 en 8 */
+        __asm__ volatile("mtc0 %0, $18\n\tmtc0 $0, $19\n\tnop\n\tnop" : : "r"(watch | 1u)); /* WatchLo: W=1 (escrituras) */
+        n64_log("vigilancia de memoria en %08lx (limites del sonido, canal 2)", (unsigned long)N64_WATCH_ADDR);
+    }
+#endif
+    n64_log("Belial 64 (DevilutionX) - v0.9.5 - Vanar");
     n64_log("RAM: %d KiB, Expansion Pak: %s", get_memory_size() / 1024, is_memory_expanded() ? "SI" : "NO");
     log_screen("Belial 64 - arrancando...");
     if (!is_memory_expanded()) {
@@ -3067,6 +3350,7 @@ int n64_main(int argc, char **argv, int (*fn)(int, char **))
     atexit(on_exit_show_log);
     register_exception_handler(n64_exception_handler);
     timer_init();
+    rumble_start_timer(); /* v0.8.6 prueba 3 */
 #if !N64_RELEASE
     new_timer(TIMER_TICKS(1000000), TF_CONTINUOUS, wd_cb); /* f2v79: vigilante de cuelgues */
 #endif
@@ -3615,7 +3899,13 @@ int n64_play_movie(const char *path, int canSkip);
 int n64_play_movie(const char *path, int canSkip)
 {
     wd_off = 1;
+    /* v0.9.0: tambien hay cinematicas dentro de la partida (la del Carnicero): se suelta lo que se puede y
+       las reservas grandes del reproductor van al bloque fijo (si caben), para no quedarse sin memoria */
+    n64_cel_cache_release();
+    n64_mon_cache_release();
+    n64_big_zone(1);
     int r = n64_play_movie_impl(path, canSkip);
+    n64_big_zone(0);
     act_ticks = TICKS_READ();
     wd_off = 0;
     return r;
@@ -3628,6 +3918,7 @@ static int n64_play_movie_impl(const char *path, int canSkip)
         return 0;
     }
     fclose(f);
+    n64_rumble_stop(); /* v0.8.6 */
     n64_sfx_stop_all();
     rspq_wait();
     fmv_can_skip = canSkip;
@@ -3849,6 +4140,7 @@ int n64_sfx_play(const char *path, float left, float right)
     ch->blk_len = 0;
     ch->started = ++sfx_serial;
     ch->start_ms = (uint32_t)get_ticks_ms();
+    mixer_fix_limits(best);
     mixer_ch_play(best, &ch->wave);
     mixer_ch_set_vol(best, left, right);
     sfx_played++;
