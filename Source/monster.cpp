@@ -4630,6 +4630,20 @@ void GolumAi(Monster &golem)
 	}
 }
 
+#ifdef __N64__
+// v0.9.0 (Belial 64): quita todos los monstruos del nivel recien creado (bosque con la mision terminada)
+void N64RemoveLevelMonsters()
+{
+	for (size_t i = ReservedMonsterSlotsForGolems; i < ActiveMonsterCount; i++) {
+		Monster &m = Monsters[ActiveMonsters[i]];
+		if (InDungeonBounds(m.position.tile))
+			dMonster[m.position.tile.x][m.position.tile.y] = 0;
+		m.isInvalid = true;
+	}
+	DeleteMonsterList();
+}
+#endif
+
 void DeleteMonsterList()
 {
 	for (int i = 0; i < ReservedMonsterSlotsForGolems; i++) {

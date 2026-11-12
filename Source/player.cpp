@@ -3476,6 +3476,7 @@ enum {
 	// clang-format on
 };
 
+int NdsSucubosEstado(); // quests.cpp (Luces del Bosque)
 void PlayDungMsgs()
 {
 	assert(MyPlayer != nullptr);
@@ -3518,7 +3519,8 @@ void PlayDungMsgs()
 	} else if (!setlevel && currlevel == 21 && !myPlayer._pLvlVisited[21] && (myPlayer.pDungMsgs & 32) == 0) {
 		myPlayer.Say(HeroSpeech::ThisIsAPlaceOfGreatPower, 30);
 		myPlayer.pDungMsgs |= 32;
-	} else if (setlevel && (setlvlnum == SL_BUTCHERLAIR || setlvlnum == SL_BOSQUE) && !gbIsMultiplayer && !myPlayer._pSLvlVisited[setlvlnum]) {
+	} else if (setlevel && !gbIsMultiplayer && !myPlayer._pSLvlVisited[setlvlnum]
+	    && ((setlvlnum == SL_BUTCHERLAIR && Quests[Q_BUTCHER]._qactive != QUEST_DONE) || (setlvlnum == SL_BOSQUE && NdsSucubosEstado() != 2))) {
 		// v0.9.0 (Belial 64): frases sin usar, la primera vez: guarida del Carnicero "What was that?", bosque "I've never been here before"
 		myPlayer.Say(setlvlnum == SL_BUTCHERLAIR ? HeroSpeech::WhatWasThat : HeroSpeech::IveNeverBeenHereBefore, 40);
 	} else if (setlevel && setlvlnum == SL_SKELKING && !gbIsSpawn && !myPlayer._pSLvlVisited[SL_SKELKING] && Quests[Q_SKELKING]._qactive == QUEST_ACTIVE) {

@@ -26,6 +26,8 @@
 
 namespace devilution {
 
+int NdsSucubosEstado(); /* quests.cpp */
+void N64RemoveLevelMonsters(); /* monster.cpp (v0.9.0) */
 int NdsBosqueW = 0; /* NDS-BOSQUE */
 int NdsBosqueH = 0;
 Point NdsBosqueInicio = { 0, 0 }; /* NDS-BOSQUE3 */
@@ -89,6 +91,12 @@ void SetMapTransparency(const char *path)
 std::expected<void, std::string> NdsLoadBosque(const char *path)
 {
 	RETURN_IF_ERROR(LoadDungeonBase(path, { 0, 0 }, 0, 0)); /* limpia el nivel; capas de monstruos/objetos vacias */
+#ifdef __N64__
+	// v0.9.0 (Belial 64): con Luces del Bosque terminada el bosque queda vacio (sin sucubos), aunque no se haya
+	// guardado la partida despues de visitarlo
+	if (!gbIsMultiplayer && NdsSucubosEstado() == 2)
+		N64RemoveLevelMonsters();
+#endif
 	memset(dungeon, 0, sizeof(dungeon)); /* sin mapa automatico de Catedral */
 	auto dunData = LoadFileInMem<uint16_t>(path);
 	const WorldTileSize size = GetDunSize(dunData.get());
