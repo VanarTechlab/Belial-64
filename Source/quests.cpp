@@ -248,6 +248,7 @@ void NdsBosqueSucubos(const Player &me)
 			}
 			if (NdsSpawnAndariel(sitio)) {
 				NdsSucubosGuardar(1);
+				me.Say(HeroSpeech::TimeToDie); /* v0.9.0 (Belial 64): frase sin usar del juego */
 				NdsAndarielVista = true;
 				NdsAviso(_("Andariel has awakened!"), 80);
 			}
@@ -260,6 +261,7 @@ void NdsBosqueSucubos(const Player &me)
 			NdsAndarielVista = false;
 			MyPlayer->_pStatPts += 5;
 			NdsSucubosGuardar(2);
+			MyPlayer->Say(HeroSpeech::YoullLureNoMoreMenToTheirDeaths, 30); /* v0.9.0 (Belial 64) */
 			NdsAviso(_("Andariel defeated: +5 stat points"), 160);
 		}
 	}

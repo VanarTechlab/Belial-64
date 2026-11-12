@@ -3518,6 +3518,8 @@ void PlayDungMsgs()
 	} else if (!setlevel && currlevel == 21 && !myPlayer._pLvlVisited[21] && (myPlayer.pDungMsgs & 32) == 0) {
 		myPlayer.Say(HeroSpeech::ThisIsAPlaceOfGreatPower, 30);
 		myPlayer.pDungMsgs |= 32;
+	} else if (setlevel && (setlvlnum == SL_BUTCHERLAIR || setlvlnum == SL_BOSQUE) && !gbIsMultiplayer && !myPlayer._pSLvlVisited[setlvlnum]) {
+		myPlayer.Say(HeroSpeech::IveNeverBeenHereBefore, 40); // v0.9.0 (Belial 64): frase sin usar, primera vez en la guarida o el bosque
 	} else if (setlevel && setlvlnum == SL_SKELKING && !gbIsSpawn && !myPlayer._pSLvlVisited[SL_SKELKING] && Quests[Q_SKELKING]._qactive == QUEST_ACTIVE) {
 		sfxdelay = 10;
 		sfxdnum = SfxID::LeoricGreeting;

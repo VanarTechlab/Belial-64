@@ -4436,6 +4436,19 @@ void StartMonsterDeath(Monster &monster, const Player &player, bool sendmsg)
 	monster.tag(player);
 	const Direction md = GetDirection(monster.position.tile, player.position.tile);
 	MonsterDeath(monster, md, sendmsg);
+#ifdef __N64__
+	// v0.9.0: grito de combate del heroe de vez en cuando al matar (frases grabadas que el juego no usaba).
+	// Azar propio (reloj), no el de la partida; como mucho uno cada 15 s; sin unicos (tienen sus frases).
+	if (&player == MyPlayer && !gbIsMultiplayer && !monster.isUnique() && monster.type().type != MT_GOLEM) {
+		static uint32_t n64LastCry = 0;
+		const uint32_t now = SDL_GetTicks();
+		if (now - n64LastCry > 15000 && (now / 7) % 8 == 0) {
+			n64LastCry = now;
+			static const HeroSpeech cries[] = { HeroSpeech::Die, HeroSpeech::VengeanceIsMine, HeroSpeech::BackToTheGrave, HeroSpeech::OhTooEasy };
+			player.SaySpecific(cries[(now / 61) % 4]);
+		}
+	}
+#endif
 }
 
 void KillGolem(Monster &golem)
