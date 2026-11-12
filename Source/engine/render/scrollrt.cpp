@@ -190,6 +190,9 @@ void N64FreeOverlay()
 // de abajo, cursor) se dibuja en la capa de 640x480 con las coordenadas de 640x480, como en el PC, y
 // el RDP la pone encima del mundo (que sigue a 400x300). Asi caben enteros.
 bool N64UiMode = false;
+bool n64OverlayInHeap = false; // v0.8.6 prueba 7
+extern "C" int n64_heap_largest_kib(void);
+extern "C" void n64_log(const char *fmt, ...);
 void N64RecalcUIRectangle();
 bool N64WantUiMode()
 {
@@ -210,11 +213,21 @@ void N64UpdateUiMode()
 		// caiga en su hueco; al cerrar la capa se suelta otra vez para que la cache vuelva a ese hueco.
 		// Antes la memoria se iba troceando: la cache quedaba pequena (el pueblo iba a 6 fps) y al
 		// guardar no cabia el bloque del guardado.
-		n64_cel_cache_release();
-		// f2v80: la capa (300 KiB) va al bloque fijo de la cache de CEL; el anillo usa lo que sobra
-		n64_big_zone(1);
-		n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
-		n64_big_zone(0);
+		// v0.8.6 prueba 7: si sobra memoria (un hueco de 301 KiB + 200 KiB de margen), la capa va a la RAM
+		// normal y la cache de CEL se queda entera (512 KiB): mas fps con menus abiertos. Si no, como antes.
+		n64OverlayInHeap = n64_heap_largest_kib() >= 301 + 200;
+		if (n64OverlayInHeap) {
+			n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
+			n64_log("capa de menus en la RAM normal: cache de CEL entera (libre %d KiB)", n64_heap_free_kib());
+		}
+		if (n64OverlaySurface == nullptr) {
+			n64OverlayInHeap = false;
+			n64_cel_cache_release();
+			// f2v80: la capa (300 KiB) va al bloque fijo de la cache de CEL; el anillo usa lo que sobra
+			n64_big_zone(1);
+			n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
+			n64_big_zone(0);
+		}
 	}
 	const bool on = want && n64OverlaySurface != nullptr;
 	if (on != N64UiMode) {
@@ -239,7 +252,9 @@ void N64UpdateUiMode()
 	}
 	if (!want && n64OverlaySurface != nullptr) {
 		N64FreeOverlay();
-		n64_cel_cache_release(); // f2v75: que la cache vuelva al hueco grande
+		if (!n64OverlayInHeap)
+			n64_cel_cache_release(); // f2v75: que la cache vuelva al hueco grande
+		n64OverlayInHeap = false;
 	}
 	if (N64UiMode)
 		n64_overlay_attach(static_cast<uint8_t *>(n64OverlaySurface->pixels), n64OverlaySurface->pitch);
@@ -261,6 +276,7 @@ void N64FreePanelLayer()
 {
 	N64FreeFloorSave();
 	N64FreeOverlay();
+	n64OverlayInHeap = false;
 	if (n64PanelSurface != nullptr) {
 		n64_panel_attach(nullptr, 0, 0, 0);
 		SDL_FreeSurface(n64PanelSurface);
