@@ -215,6 +215,10 @@ void N64UpdateUiMode()
 		// guardar no cabia el bloque del guardado.
 		// v0.8.6 prueba 7: si sobra memoria (un hueco de 301 KiB + 200 KiB de margen), la capa va a la RAM
 		// normal y la cache de CEL se queda entera (512 KiB): mas fps con menus abiertos. Si no, como antes.
+		// La letra grande del menu de START (~90 KiB) se carga la primera vez que se dibuja; si eso pasa con
+		// la capa ya puesta, queda en medio y trocea la memoria (MEDIDO en la prueba 7). Se carga antes.
+		if (gmenu_is_active())
+			(void)GetLineWidth("A", GameFont46, 2);
 		n64OverlayInHeap = n64_heap_largest_kib() >= 301 + 200;
 		if (n64OverlayInHeap) {
 			n64OverlaySurface = SDL_CreateRGBSurface(0, 640, 480, 8, 0, 0, 0, 0);
