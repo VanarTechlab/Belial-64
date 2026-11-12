@@ -334,6 +334,11 @@ void InitVPTriggers()
 
 bool ForceTownTrig()
 {
+	if (!gbIsMultiplayer && cursPosition.x >= 9 && cursPosition.x <= 11 && cursPosition.y >= 49 && cursPosition.y <= 54) { /* NDS-BOSQUE4 */
+		InfoString = _("Entrance to the Forest");
+		cursPosition = { 10, 52 };
+		return true;
+	}
 	for (const uint16_t tileId : TownDownList) {
 		if (dPiece[cursPosition.x][cursPosition.y] == tileId) {
 			InfoString = _("Down to dungeon");
@@ -790,6 +795,8 @@ bool ForceArenaTrig()
 	return false;
 }
 
+extern Point NdsBosqueSalidaA, NdsBosqueSalidaB; /* NDS-BOSQUE5 (setmaps.cpp) */
+
 void CheckTrigForce()
 {
 	trigflag = false;
@@ -837,6 +844,15 @@ void CheckTrigForce()
 			break;
 		case SL_POISONWATER:
 			trigflag = ForcePWaterTrig();
+			break;
+		case SL_BOSQUE: /* NDS-BOSQUE5: texto en la salida al pueblo */
+			if (NdsBosqueSalidaB.x >= NdsBosqueSalidaA.x
+			    && cursPosition.x >= NdsBosqueSalidaA.x && cursPosition.x <= NdsBosqueSalidaB.x
+			    && cursPosition.y >= NdsBosqueSalidaA.y && cursPosition.y <= NdsBosqueSalidaB.y) {
+				InfoString = _("Back to Town");
+				cursPosition = NdsBosqueSalidaA;
+				trigflag = true;
+			}
 			break;
 		default:
 			if (IsArenaLevel(setlvlnum))

@@ -73,7 +73,7 @@ namespace {
 
 std::unique_ptr<uint16_t[]> LoadMinData(size_t &tileCount)
 {
-	switch (leveltype) {
+	switch (NdsGfxType()) { /* NDS-BOSQUE */
 	case DTYPE_TOWN: {
 		const TownAssets &active = GetActiveTownConfigForTileLoad().assets;
 		const TownAssets &tristram = GetTownRegistry().GetTown(TristramTownId).assets;
@@ -106,7 +106,7 @@ std::unique_ptr<uint16_t[]> LoadMinData(size_t &tileCount)
 
 std::expected<void, std::string> LoadLevelSOLData()
 {
-	switch (leveltype) {
+	switch (NdsGfxType()) { /* NDS-BOSQUE */
 	case DTYPE_TOWN: {
 		const TownAssets &active = GetActiveTownConfigForTileLoad().assets;
 		const TownAssets &tristram = GetTownRegistry().GetTown(TristramTownId).assets;
@@ -183,7 +183,7 @@ void SetDungeonMicros(std::unique_ptr<std::byte[]> &dungeonCels, uint_fast8_t &m
 	microTileLen = 10;
 	size_t blocks = 10;
 
-	if (leveltype == DTYPE_TOWN) {
+	if (NdsGfxType() == DTYPE_TOWN) { /* NDS-BOSQUE */
 		microTileLen = GetActiveTownConfigForTileLoad().assets.microTileLen;
 		blocks = microTileLen;
 	} else if (leveltype == DTYPE_HELL) {

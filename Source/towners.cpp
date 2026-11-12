@@ -756,6 +756,7 @@ size_t GetNumTowners()
 #ifdef __N64__
 // v0.9.0: "!" encima de los aldeanos que tienen una mision nueva para darte (las mismas condiciones con
 // las que cada uno la empieza al hablar con el, ver TalkTo...).
+int NdsSucubosEstado(); // quests.cpp (Luces del Bosque)
 bool N64TownerHasQuest(const Towner &towner)
 {
 	if (MyPlayer == nullptr)
@@ -791,7 +792,9 @@ bool N64TownerHasQuest(const Towner &towner)
 	}
 	case TOWN_WITCH:
 		return Quests[Q_MUSHROOM]._qactive == QUEST_INIT && HasInventoryItemWithId(player, IDI_FUNGALTM);
-	case TOWN_BMAID:
+	case TOWN_BMAID: // tambien Luces del Bosque (de Hellspawn): la empieza Gillian, nivel 18, un jugador
+		if (!gbIsMultiplayer && player.getCharacterLevel() >= 18 && NdsSucubosEstado() == 0)
+			return true;
 		return !player._pLvlVisited[21] && HasInventoryItemWithId(player, IDI_MAPOFDOOM) && Quests[Q_GRAVE]._qmsg != TEXT_GRAVE8;
 	case TOWN_FARMER: {
 		const Quest &q = Quests[Q_FARMER];

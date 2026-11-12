@@ -514,6 +514,8 @@ void InitGolems();
 std::expected<void, std::string> InitMonsters();
 std::expected<void, std::string> SetMapMonsters(const uint16_t *dunData, Point startPosition);
 Monster *AddMonster(Point position, Direction dir, size_t typeIndex, bool inMap);
+UniqueMonsterType NdsAndarielId(); /* NDS-SUCUBOS */
+bool NdsSpawnAndariel(Point position);
 /**
  * @brief Spawns a new monsters (dynamically/not on level load).
  * The command is only executed for the level owner, to prevent desyncs in multiplayer.

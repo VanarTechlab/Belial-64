@@ -20,8 +20,19 @@
 #include "tables/objdat.h"
 #include "utils/language.h"
 #include "utils/status_macros.hpp"
+#include "utils/endian_swap.hpp" /* NDS-BOSQUE */
+#include <cstring>
+#include "engine/light_tables.hpp" /* NDS-BOSQUE2 */
 
 namespace devilution {
+
+int NdsBosqueW = 0; /* NDS-BOSQUE */
+int NdsBosqueH = 0;
+Point NdsBosqueInicio = { 0, 0 }; /* NDS-BOSQUE3 */
+bool NdsBosqueSalidaLista = false;
+Point NdsBosqueSalidaA = { 0, 0 }; /* NDS-BOSQUE5 */
+Point NdsBosqueSalidaB = { -1, -1 };
+Point NdsBosqueLuz = { 0, 0 }; /* NDS-SUCUBOS */
 
 /** Maps from quest level to quest level names. */
 const char *const QuestLevelNames[] = {
@@ -32,6 +43,7 @@ const char *const QuestLevelNames[] = {
 	N_("Poisoned Water Supply"),
 	N_("Archbishop Lazarus' Lair"),
 	N_("Butcher's Lair"), /* NDS-GUARIDA */
+	N_("Forest"), /* NDS-BOSQUE */
 	N_("Church Arena"),
 	N_("Hell Arena"),
 	N_("Circle of Life Arena"),
@@ -71,6 +83,108 @@ void SetMapTransparency(const char *path)
 {
 	auto dunData = LoadFileInMem<uint16_t>(path);
 	LoadTransparency(dunData.get());
+}
+
+/* NDS-BOSQUE: mapa hecho con piezas grandes del pueblo (town.til). Marcas en la capa 0: 1 = Inicio */
+std::expected<void, std::string> NdsLoadBosque(const char *path)
+{
+	RETURN_IF_ERROR(LoadDungeonBase(path, { 0, 0 }, 0, 0)); /* limpia el nivel; capas de monstruos/objetos vacias */
+	memset(dungeon, 0, sizeof(dungeon)); /* sin mapa automatico de Catedral */
+	auto dunData = LoadFileInMem<uint16_t>(path);
+	const WorldTileSize size = GetDunSize(dunData.get());
+	NdsBosqueW = size.width;
+	NdsBosqueH = size.height;
+	for (int x = 0; x < MAXDUNX; x++)
+		for (int y = 0; y < MAXDUNY; y++)
+			dPiece[x][y] = 426; /* negro solido, como fuera del pueblo */
+	const uint16_t *tileLayer = &dunData[2];
+	for (int j = 0; j < NdsBosqueH; j++) {
+		for (int i = 0; i < NdsBosqueW; i++) {
+			const int tileId = Swap16LE(tileLayer[(j * NdsBosqueW) + i]) - 1;
+			if (tileId < 0)
+				continue;
+			const MegaTile mega = pMegaTiles[tileId];
+			const int xx = 16 + 2 * i;
+			const int yy = 16 + 2 * j;
+			dPiece[xx + 0][yy + 0] = Swap16LE(mega.micro1);
+			dPiece[xx + 1][yy + 0] = Swap16LE(mega.micro2);
+			dPiece[xx + 0][yy + 1] = Swap16LE(mega.micro3);
+			dPiece[xx + 1][yy + 1] = Swap16LE(mega.micro4);
+		}
+	}
+	ViewPosition = { 16 + NdsBosqueW, 16 + NdsBosqueH };
+	const uint16_t *marks = &dunData[2 + (NdsBosqueW * NdsBosqueH)];
+	for (int j = 0; j < 2 * NdsBosqueH; j++)
+		for (int i = 0; i < 2 * NdsBosqueW; i++)
+			if (Swap16LE(marks[(j * 2 * NdsBosqueW) + i]) == 1)
+				ViewPosition = { 16 + i, 16 + j };
+	NdsBosqueInicio = ViewPosition; /* NDS-BOSQUE3 */
+	NdsBosqueSalidaLista = false;
+	NdsBosqueLuz = { 0, 0 }; /* NDS-SUCUBOS: luz roja = marca 4 */
+	for (int j = 0; j < 2 * NdsBosqueH; j++)
+		for (int i = 0; i < 2 * NdsBosqueW; i++)
+			if (Swap16LE(marks[(j * 2 * NdsBosqueW) + i]) == 4)
+				NdsBosqueLuz = { 16 + i, 16 + j };
+	NdsBosqueSalidaA = { 0, 0 }; /* NDS-BOSQUE5: casillas con la marca 5 = salida al pueblo */
+	NdsBosqueSalidaB = { -1, -1 };
+	for (int j = 0; j < 2 * NdsBosqueH; j++) {
+		for (int i = 0; i < 2 * NdsBosqueW; i++) {
+			if (Swap16LE(marks[(j * 2 * NdsBosqueW) + i]) != 5)
+				continue;
+			const int x = 16 + i;
+			const int y = 16 + j;
+			if (NdsBosqueSalidaB.x < NdsBosqueSalidaA.x) {
+				NdsBosqueSalidaA = { x, y };
+				NdsBosqueSalidaB = { x + 1, y + 1 };
+				continue;
+			}
+			if (x < NdsBosqueSalidaA.x) NdsBosqueSalidaA.x = x;
+			if (y < NdsBosqueSalidaA.y) NdsBosqueSalidaA.y = y;
+			if (x + 1 > NdsBosqueSalidaB.x) NdsBosqueSalidaB.x = x + 1;
+			if (y + 1 > NdsBosqueSalidaB.y) NdsBosqueSalidaB.y = y + 1;
+		}
+	}
+	{ /* NDS-BOSQUE3: borde siempre cerrado con trozos de roca solida */
+		const MegaTile roca = pMegaTiles[63 - 1];
+		const uint16_t rocaP[4] = { Swap16LE(roca.micro1), Swap16LE(roca.micro2), Swap16LE(roca.micro3), Swap16LE(roca.micro4) };
+		const int x0 = 16;
+		const int y0 = 16;
+		const int x1 = 16 + (2 * NdsBosqueW) - 1;
+		const int y1 = 16 + (2 * NdsBosqueH) - 1;
+		for (int x = x0; x <= x1; x++) {
+			for (int y = y0; y <= y1; y++) {
+				if (x != x0 && x != x1 && y != y0 && y != y1)
+					continue;
+				if (TileHasAny(Point { x, y }, TileProperties::Solid))
+					continue;
+				dPiece[x][y] = rocaP[(((y - y0) & 1) * 2) + ((x - x0) & 1)];
+			}
+		}
+	}
+	LoadRndLvlPal(DTYPE_TOWN);
+	/* NDS-BOSQUE2: tablas de oscuridad hechas para la paleta del pueblo (color mas parecido) */
+	for (int L = 1; L < 15; L++) {
+		const int f = 15 - L; /* brillo en quinceavos */
+		for (int c = 1; c < 128; c++) {
+			const int r = logical_palette[c].r * f / 15;
+			const int g = logical_palette[c].g * f / 15;
+			const int b = logical_palette[c].b * f / 15;
+			int best = 0;
+			int bestDist = 0x7FFFFFFF;
+			for (int k = 0; k < 128; k++) {
+				const int dr = logical_palette[k].r - r;
+				const int dg = logical_palette[k].g - g;
+				const int db = logical_palette[k].b - b;
+				const int d = (2 * dr * dr) + (4 * dg * dg) + (3 * db * db);
+				if (d < bestDist) {
+					bestDist = d;
+					best = k;
+				}
+			}
+			LightTables[L][c] = static_cast<uint8_t>(best);
+		}
+	}
+	return {};
 }
 
 std::expected<void, std::string> LoadCustomMap(const char *path, Point viewPosition)
@@ -163,6 +277,11 @@ std::expected<void, std::string> LoadSetMap()
 		numtrigs = 1;
 		trigs[0].position = { 21, 32 }; /* portal rojo de vuelta (NDS-GUARIDA5) */
 		trigs[0]._tmsg = WM_DIABRTNLVL;
+		break;
+	case SL_BOSQUE: /* NDS-BOSQUE */
+		setlvltype = DTYPE_CATHEDRAL;
+		RETURN_IF_ERROR(NdsLoadBosque("nds\\bosque.dun"));
+		InitNoTriggers();
 		break;
 	case SL_ARENA_CHURCH:
 		RETURN_IF_ERROR(LoadArenaMap("arena\\church.dun", { 29, 22 }, { 28, 20 }));

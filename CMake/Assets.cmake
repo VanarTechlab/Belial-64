@@ -219,6 +219,7 @@ set(devilutionx_assets
   txtdata/towners/towners.tsv
   ui_art/diablo.pal
   nds/guarida.dun
+  nds/bosque.dun
   ui_art/creditsw.clx
   ui_art/dvl_but_sml.clx
   ui_art/dvl_lrpopup.clx

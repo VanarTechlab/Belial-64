@@ -611,6 +611,10 @@ std::expected<void, std::string> PlaceQuestMonsters()
 	} else if (setlvlnum == SL_BUTCHERLAIR) { /* NDS-GUARIDA */
 		RETURN_IF_ERROR(AddMonsterType(UniqueMonsterType::Butcher, PLACE_UNIQUE));
 		RETURN_IF_ERROR(PlaceUniqueMonst(UniqueMonsterType::Butcher, 0, 0));
+	} else if (setlvlnum == SL_BOSQUE) { /* NDS-SUCUBOS: graficos de Andariel (aparece al tocar la luz) */
+		const UniqueMonsterType ndsA = NdsAndarielId();
+		if (ndsA != UniqueMonsterType::None)
+			RETURN_IF_ERROR(AddMonsterType(ndsA, PLACE_UNIQUE));
 	} else if (setlvlnum == SL_VILEBETRAYER) {
 		RETURN_IF_ERROR(AddMonsterType(UniqueMonsterType::Lazarus, PLACE_UNIQUE));
 		RETURN_IF_ERROR(AddMonsterType(UniqueMonsterType::RedVex, PLACE_UNIQUE));
@@ -4152,6 +4156,32 @@ Monster *AddMonster(Point position, Direction dir, size_t typeIndex, bool inMap)
 	}
 
 	return nullptr;
+}
+
+UniqueMonsterType NdsAndarielId() /* NDS-SUCUBOS */
+{
+	for (size_t i = 0; i < UniqueMonstersData.size(); i++)
+		if (UniqueMonstersData[i].mName == "Andariel")
+			return static_cast<UniqueMonsterType>(i);
+	return UniqueMonsterType::None;
+}
+
+int8_t NdsAddUniqueCorpse(Monster &monster); /* NDS-LUCES2 (dead.cpp) */
+
+bool NdsSpawnAndariel(Point position) /* NDS-SUCUBOS: aparece al tocar la luz roja */
+{
+	const UniqueMonsterType id = NdsAndarielId();
+	if (id == UniqueMonsterType::None)
+		return false;
+	const auto &data = UniqueMonstersData[static_cast<size_t>(id)];
+	const size_t typeIndex = GetMonsterTypeIndex(data.mtype);
+	Monster *monster = AddMonster(position, Direction::South, typeIndex, true);
+	if (monster == nullptr)
+		return false;
+	if (!PrepareUniqueMonst(*monster, id, 0, 0, data).has_value())
+		return false;
+	monster->corpseId = NdsAddUniqueCorpse(*monster); /* NDS-LUCES2: sin esto, cuelgue al morir */
+	return true;
 }
 
 void SpawnMonster(Point position, Direction dir, size_t typeIndex)

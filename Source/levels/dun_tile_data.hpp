@@ -87,6 +87,14 @@ extern WorldTilePosition dmaxPosition;
 extern DVL_API_FOR_TEST dungeon_type leveltype;
 /** Specifies the active quest level of the current game. */
 extern _setlevels setlvlnum;
+/* NDS-BOSQUE: el bosque usa las piezas del pueblo con reglas de mazmorra */
+extern int NdsBosqueW, NdsBosqueH;
+extern Point NdsBosqueInicio; /* NDS-BOSQUE3 */
+extern bool NdsBosqueSalidaLista;
+extern Point NdsBosqueLuz; /* NDS-SUCUBOS: luz roja (marca 4) */
+extern Point NdsBosqueSalidaA, NdsBosqueSalidaB; /* NDS-BOSQUE5: casillas de salida (marca 5); B < A = no hay */
+inline bool NdsBosque() { return setlevel && setlvlnum == SL_BOSQUE; }
+inline dungeon_type NdsGfxType() { return NdsBosque() ? DTYPE_TOWN : leveltype; }
 /** Specifies the dungeon type of the active quest level of the current game. */
 extern dungeon_type setlvltype;
 /** Specifies the player viewpoint X,Y-coordinates of the map. */

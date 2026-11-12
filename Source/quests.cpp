@@ -26,6 +26,14 @@
 #include "utils/format.hpp"
 #include "utils/is_of.hpp"
 #include "utils/language.h"
+#include "diablo_msg.hpp" /* NDS-BOSQUE4 */
+#include "menu.h" /* NDS-SUCUBOS */
+#include "player.h"
+#include "levels/tile_properties.hpp"
+#include "utils/paths.h"
+#include "utils/str_cat.hpp"
+#include <cstdio>
+#include <string>
 
 #ifdef _DEBUG
 #include "debug.h"
@@ -134,8 +142,202 @@ void InitialiseQuestPools(uint32_t seed, Quest quests[])
 	quests[rng.pickRandomlyAmong({ Q_VEIL, Q_WARLORD })]._qactive = QUEST_NOTAVAIL;
 }
 
+/* ---- NDS-SUCUBOS ---- */
+std::string NdsAvisoTxt;
+int NdsAvisoTicks = 0;
+std::string NdsSucRuta;
+int NdsSucEstado = 0;
+bool NdsLuzActiva = false;
+bool NdsAndarielVista = false;
+
+void NdsAviso(std::string_view s, int ticks)
+{
+	NdsAvisoTxt = std::string(s);
+	NdsAvisoTicks = ticks;
+#ifdef __N64__
+	InitDiabloMsg(s, static_cast<uint32_t>(ticks) * 50); /* N64: el aviso sale en el centro de la pantalla (no hay cuadro de HUD) */
+#endif
+}
+
+const char *NdsHudAvisoTexto()
+{
+	return NdsAvisoTicks > 0 ? NdsAvisoTxt.c_str() : nullptr;
+}
+
+int NdsSucubosEstado()
+{
+	if (MyPlayer == nullptr)
+		return 0;
+	const std::string ruta = StrCat(paths::PrefPath(), "nds_sucubos_", gSaveNumber, "_", MyPlayer->_pName, ".txt");
+	if (ruta != NdsSucRuta) {
+		NdsSucRuta = ruta;
+		NdsSucEstado = 0;
+		FILE *f = std::fopen(ruta.c_str(), "rb");
+		if (f != nullptr) {
+			int v = 0;
+			if (std::fscanf(f, "%d", &v) == 1)
+				NdsSucEstado = v;
+			std::fclose(f);
+		}
+	}
+	return NdsSucEstado;
+}
+
+void NdsSucubosGuardar(int e)
+{
+	NdsSucubosEstado();
+	NdsSucEstado = e;
+	FILE *f = std::fopen(NdsSucRuta.c_str(), "wb");
+	if (f != nullptr) {
+		std::fprintf(f, "%d\n", e);
+		std::fclose(f);
+	}
+}
+
+bool NdsAndarielViva()
+{
+	const UniqueMonsterType id = NdsAndarielId();
+	if (id == UniqueMonsterType::None)
+		return false;
+	for (size_t i = 0; i < ActiveMonsterCount; i++) {
+		const Monster &m = Monsters[ActiveMonsters[i]];
+		if (m.uniqueType == id && m.mode != MonsterMode::Death && m.hitPoints > 0)
+			return true;
+	}
+	return false;
+}
+
+void NdsBosqueAlCargar(const Player &myPlayer)
+{
+	NdsLuzActiva = false;
+	NdsAndarielVista = false;
+	if (NdsBosqueLuz.x <= 0)
+		return;
+	const int e = NdsSucubosEstado();
+	if (e == 2) /* NDS-LUCES: 3 = aceptada (no terminada) */
+		return;
+	if (e == 1 && NdsAndarielViva()) {
+		NdsAndarielVista = true;
+		return;
+	}
+	AddMissile(NdsBosqueLuz, NdsBosqueLuz, Direction::South, MissileID::RedPortal, TARGET_MONSTERS, myPlayer, 0, 0);
+	NdsLuzActiva = true;
+}
+
+void NdsBosqueSucubos(const Player &me)
+{
+	if (NdsLuzActiva) {
+		const Point p = me.position.tile;
+		const int dx = p.x > NdsBosqueLuz.x ? p.x - NdsBosqueLuz.x : NdsBosqueLuz.x - p.x;
+		const int dy = p.y > NdsBosqueLuz.y ? p.y - NdsBosqueLuz.y : NdsBosqueLuz.y - p.y;
+		if (dx <= 1 && dy <= 1) {
+			NdsLuzActiva = false;
+			for (Missile &m : Missiles) {
+				if (m._mitype == MissileID::RedPortal && m.position.tile == NdsBosqueLuz)
+					m._miDelFlag = true;
+			}
+			static const int8_t off[][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 }, { 1, 1 }, { -1, -1 }, { 1, -1 }, { -1, 1 },
+				{ 2, 0 }, { 0, 2 }, { -2, 0 }, { 0, -2 }, { 2, 2 }, { -2, -2 }, { 2, -2 }, { -2, 2 } };
+			Point sitio = NdsBosqueLuz;
+			for (const auto &o : off) {
+				const Point q = NdsBosqueLuz + Displacement { o[0], o[1] };
+				if (InDungeonBounds(q) && !IsTileSolid(q) && dMonster[q.x][q.y] == 0 && dPlayer[q.x][q.y] == 0) {
+					sitio = q;
+					break;
+				}
+			}
+			if (NdsSpawnAndariel(sitio)) {
+				NdsSucubosGuardar(1);
+				NdsAndarielVista = true;
+				NdsAviso(_("Andariel has awakened!"), 80);
+			}
+		}
+	}
+	if (NdsSucubosEstado() == 1) {
+		if (NdsAndarielViva()) {
+			NdsAndarielVista = true;
+		} else if (NdsAndarielVista) {
+			NdsAndarielVista = false;
+			MyPlayer->_pStatPts += 5;
+			NdsSucubosGuardar(2);
+			NdsAviso(_("Andariel defeated: +5 stat points"), 160);
+		}
+	}
+}
+/* ---- fin NDS-SUCUBOS ---- */
+
+bool NdsTownerTieneMision(int ttype) /* NDS-LUCES: "!" encima del NPC */
+{
+	if (MyPlayer == nullptr)
+		return false;
+	switch (ttype) {
+	case TOWN_BMAID:
+		return !gbIsMultiplayer && MyPlayer->getCharacterLevel() >= 18 && NdsSucubosEstado() == 0;
+	case TOWN_DEADGUY: {
+		const Quest &q = Quests[Q_BUTCHER];
+		return q._qactive != QUEST_NOTAVAIL && q._qactive != QUEST_DONE && q._qvar1 != 1;
+	}
+	case TOWN_FARMER: {
+		const Quest &q = Quests[Q_FARMER];
+		return (q._qactive == QUEST_INIT || q._qactive == QUEST_NOTAVAIL) && (MyPlayer->_pLvlVisited[9] || MyPlayer->getCharacterLevel() >= 15);
+	}
+	case TOWN_GIRL: {
+		const Quest &q = Quests[Q_GIRL];
+		return q._qactive == QUEST_INIT || q._qactive == QUEST_NOTAVAIL;
+	}
+	default:
+		return false;
+	}
+}
+
 void CheckQuests()
 {
+	{ /* NDS-BOSQUE: borde oeste del pueblo <-> bosque (solo un jugador) */
+		const Player &me = *MyPlayer;
+		if (NdsAvisoTicks > 0) /* NDS-SUCUBOS */
+			NdsAvisoTicks--;
+		if (!gbIsMultiplayer && NdsBosque())
+			NdsBosqueSucubos(me);
+		if (!gbIsMultiplayer && !setlevel && leveltype == DTYPE_TOWN) { /* NDS-BOSQUE4: aviso al acercarte a la entrada */
+			static bool ndsAvisoBosque = false;
+			const int dx = me.position.tile.x - 10;
+			const int dy = me.position.tile.y - 52;
+			const int ax = dx < 0 ? -dx : dx;
+			const int ay = dy < 0 ? -dy : dy;
+			const int dist = ax > ay ? ax : ay;
+			if (dist <= 4 && !ndsAvisoBosque) {
+				ndsAvisoBosque = true;
+				/* NDS-BOSQUE6: sin recuadro grande; el texto sale en el cuadro del HUD */
+			} else if (dist >= 10) {
+				ndsAvisoBosque = false;
+			}
+		}
+		if (NdsBosque() && !NdsBosqueSalidaLista) { /* NDS-BOSQUE3: la salida se activa al alejarte del Inicio */
+			const Point p = me.position.tile;
+			if (p.x - NdsBosqueInicio.x >= 4 || NdsBosqueInicio.x - p.x >= 4 || p.y - NdsBosqueInicio.y >= 4 || NdsBosqueInicio.y - p.y >= 4)
+				NdsBosqueSalidaLista = true;
+		}
+		if (!gbIsMultiplayer && me._pmode == PM_STAND) {
+			const Point t = me.position.tile;
+			if (!setlevel && leveltype == DTYPE_TOWN && t.x <= 10 && t.y >= 49 && t.y <= 54 && me.getCharacterLevel() < 18) /* NDS-LUCES: nivel 18 */
+				NdsAviso(_("You need level 18 to enter the Forest"), 40);
+			if (!setlevel && leveltype == DTYPE_TOWN && t.x <= 10 && t.y >= 49 && t.y <= 54 && me.getCharacterLevel() >= 18 && NdsSucubosEstado() == 0) /* NDS-LUCES */
+				NdsAviso(_("Talk to Gillian first"), 40);
+			if (!setlevel && leveltype == DTYPE_TOWN && t.x <= 10 && t.y >= 49 && t.y <= 54 && me.getCharacterLevel() >= 18 && NdsSucubosEstado() != 0) {
+				setlvltype = DTYPE_CATHEDRAL;
+				StartNewLvl(*MyPlayer, WM_DIABSETLVL, SL_BOSQUE);
+				return;
+			}
+			if (NdsBosque() && NdsBosqueW > 0 /* NDS-BOSQUE5: salida = casillas con la marca 5 */
+			    && ((NdsBosqueSalidaB.x >= NdsBosqueSalidaA.x
+			            && t.x >= NdsBosqueSalidaA.x && t.x <= NdsBosqueSalidaB.x && t.y >= NdsBosqueSalidaA.y && t.y <= NdsBosqueSalidaB.y)
+			        || (NdsBosqueSalidaB.x < NdsBosqueSalidaA.x && NdsBosqueSalidaLista /* NDS-BOSQUE3: sin marca 5, volver al Inicio */
+			            && t.x - NdsBosqueInicio.x <= 1 && NdsBosqueInicio.x - t.x <= 1 && t.y - NdsBosqueInicio.y <= 1 && NdsBosqueInicio.y - t.y <= 1))) {
+				StartNewLvl(*MyPlayer, WM_DIABRTNLVL, 0);
+				return;
+			}
+		}
+	}
 	if (gbIsSpawn)
 		return;
 
@@ -342,6 +544,8 @@ Point GetMapReturnPosition()
 		return Quests[Q_BETRAYER].position + Direction::South;
 	case SL_BUTCHERLAIR: /* NDS-GUARIDA9: vuelta junto al portal rojo, no encima */
 		return Quests[Q_BUTCHER].position + Direction::South;
+	case SL_BOSQUE: /* NDS-BOSQUE: vuelta al borde oeste del pueblo */
+		return { 12, 52 };
 	default:
 		return GetTowner(TOWN_DRUNK)->position + Direction::SouthEast;
 	}

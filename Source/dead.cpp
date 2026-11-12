@@ -17,6 +17,7 @@
 namespace devilution {
 
 Corpse Corpses[MaxCorpses];
+static int8_t NdsCorpsesUsed = 0; /* NDS-LUCES2: huecos de cadaver ocupados */
 int8_t stonendx;
 
 namespace {
@@ -92,6 +93,18 @@ void InitCorpses()
 	}
 
 	assert(static_cast<unsigned>(nd) <= MaxCorpses);
+	NdsCorpsesUsed = nd; /* NDS-LUCES2 */
+}
+
+int8_t NdsAddUniqueCorpse(Monster &monster) /* NDS-LUCES2: cadaver de un unico que aparece a mitad de nivel */
+{
+	if (NdsCorpsesUsed >= static_cast<int8_t>(MaxCorpses))
+		return monster.type().corpseId; /* sin hueco: cadaver normal de su tipo */
+	const int8_t nd = NdsCorpsesUsed;
+	InitDeadAnimationFromMonster(Corpses[nd], monster.type());
+	Corpses[nd].translationPaletteIndex = static_cast<uint8_t>(monster.getId() + 1);
+	NdsCorpsesUsed++;
+	return NdsCorpsesUsed;
 }
 
 void AddCorpse(Point tilePosition, int8_t dv, Direction ddir)
