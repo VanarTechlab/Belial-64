@@ -2176,6 +2176,9 @@ Item &GetInventoryItem(Player &player, int location)
 	return player.SpdList[location - INVITEM_BELT_FIRST];
 }
 
+#ifdef __N64__
+extern "C" void n64_paso(const char *fmt, ...);
+#endif
 bool UseInvItem(int cii)
 {
 	if (IsInspectingPlayer())
@@ -2292,6 +2295,9 @@ bool UseInvItem(int cii)
 		PlaySFX(ItemInvSnds[idata]);
 
 	UseItem(player, item->_iMiscId, item->_iSpell, cii);
+#ifdef __N64__
+	n64_paso("usar objeto: UseItem terminado"); // v0.8.6 prueba 5
+#endif
 
 	if (speedlist) {
 		if (player.SpdList[c]._iMiscId == IMISC_NOTE) {
@@ -2312,6 +2318,9 @@ bool UseInvItem(int cii)
 	}
 	if (!item->isScroll() && !item->isRune())
 		player.RemoveInvItem(c);
+#ifdef __N64__
+	n64_paso("usar objeto: quitado del inventario"); // v0.8.6 prueba 5
+#endif
 
 	return true;
 }
