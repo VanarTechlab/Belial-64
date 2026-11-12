@@ -330,6 +330,33 @@ void FindMeleeTarget()
 
 	const Player &myPlayer = *MyPlayer;
 
+	// v0.8.6 prueba 4: la busqueda por casillas de abajo cuesta ~11 ms por tic con un luchador cuerpo a
+	// cuerpo y monstruos cerca pero tras paredes (MEDIDO en la catedral con el guerrero; la picara usa
+	// FindRangedTarget, que es barato). Se hace solo 1 de cada 3 veces; las otras 2 se reutiliza el
+	// resultado anterior si ese monstruo sigue siendo un objetivo valido y cerca.
+	static unsigned n64Calls = 0;
+	static int n64LastMi = -1;
+	static Point n64LastFrom;
+	struct N64Save {
+		~N64Save() { n64LastMi = pcursmonst; }
+	};
+	{
+		const Point from = myPlayer.position.future;
+		if ((n64Calls++ % 3) != 0 && from == n64LastFrom) {
+			if (n64LastMi >= 0) {
+				const Monster &m = Monsters[n64LastMi];
+				if (CanTargetMonster(m) && std::abs(m.position.tile.x - from.x) <= 26 && std::abs(m.position.tile.y - from.y) <= 26)
+					pcursmonst = n64LastMi;
+			}
+			if (n64LastMi < 0 || pcursmonst >= 0)
+				return;
+		}
+		n64Calls = 1;
+		n64LastFrom = from;
+	}
+	N64Save n64Save; // guarda el resultado al salir de la funcion
+	(void)n64Save;
+
 	// f2v47: la busqueda solo puede encontrar monstruos a 26 casillas o menos (cada paso avanza
 	// como mucho una casilla). Si no hay ninguno tan cerca, el resultado es "ninguno": no se busca.
 	// (f2v46 MEDIDO: la entrada seguia en 6-9 ms por tic en la mazmorra sin enemigos cerca.)
