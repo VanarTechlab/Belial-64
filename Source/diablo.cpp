@@ -210,6 +210,9 @@ void StartGame(interface_mode uMsg)
 	LastPlayerAction = PlayerActionType::None;
 }
 
+#ifdef __N64__
+extern "C" void n64_heap_dump(const char *tag);
+#endif
 void FreeGame()
 {
 	FreeMonsterHealthBar();
@@ -231,6 +234,9 @@ void FreeGame()
 	FreeGameMem();
 	stream_stop();
 	music_stop();
+#ifdef __N64__
+	n64_heap_dump("al salir de la partida"); // v0.9.0 (solo DIAG): que sigue reservado y trocea la memoria
+#endif
 }
 
 #ifdef __N64__
@@ -1286,7 +1292,7 @@ void DiabloInitScreen()
 void SetApplicationVersions()
 {
 #ifdef __N64__
-	*BufCopy(gszProductName, "Belial 64 v0.9.0 prueba 17 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
+	*BufCopy(gszProductName, "Belial 64 v0.9.0 prueba 18 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
 #else
 	*BufCopy(gszProductName, PROJECT_NAME, " v", PROJECT_VERSION) = '\0';
 #endif
