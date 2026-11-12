@@ -4,6 +4,11 @@
 #include "engine/render/primitive_render.hpp"
 #include "inv.h"
 #include "levels/trigs.h"
+#ifdef __N64__
+#include "game_mode.hpp"
+#include "levels/gendung.h"
+#include "multi.h"
+#endif
 #include "options.h"
 #include "panels/partypanel.hpp"
 #include "qol/stash.h"
@@ -465,6 +470,16 @@ void DrawInfoBox(const Surface &out)
 			AddInfoBoxString(_("Right click to inspect"));
 		}
 	}
+#ifdef __N64__
+	// v0.9.0: cerca de la entrada al bosque (Luces del Bosque), el texto sale en la caja de abajo, como en Hellspawn (NDS-BOSQUE6)
+	if (InfoString.empty() && !gbIsMultiplayer && !setlevel && leveltype == DTYPE_TOWN) {
+		const Point n64P = myPlayer.position.tile;
+		if (n64P.x <= 14 && n64P.y >= 47 && n64P.y <= 57) {
+			InfoString = myPlayer.getCharacterLevel() >= 18 ? _("Entrance to the Forest") : _("Entrance to the Forest (level 18)");
+			InfoColor = UiFlags::ColorWhitegold;
+		}
+	}
+#endif
 	if (!InfoString.empty())
 		PrintInfo(out);
 }

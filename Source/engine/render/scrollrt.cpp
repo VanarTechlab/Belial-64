@@ -2539,6 +2539,14 @@ void DrawAndBlit()
 #endif
 
 	DrawFPS(out);
+#if defined(__N64__) && defined(N64_COORDS)
+	// SOLO PRUEBAS (como f2v90): coordenadas del heroe arriba a la derecha en el pueblo
+	if (leveltype == DTYPE_TOWN && !N64UiMode && MyPlayer != nullptr) {
+		const Point n64P = MyPlayer->position.tile;
+		DrawString(out, StrCat(n64P.x, ",", n64P.y), Rectangle(Point { gnScreenWidth - 70, 4 }, Size { 66, 16 }),
+		    { .flags = UiFlags::ColorWhite | UiFlags::AlignRight });
+	}
+#endif
 	N64_GUARD("tras DrawCursor+DrawFPS");
 
 #ifdef __N64__
