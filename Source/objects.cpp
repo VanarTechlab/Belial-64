@@ -2673,6 +2673,18 @@ void OperateShrineSpiritual(DiabloGenerator &rng, Player &player)
 	if (&player != MyPlayer)
 		return;
 
+#ifdef __N64__
+	// v0.9.0: con el monedero las casillas vacias no tienen oro: antes se creaba un monton por cada casilla
+	// vacia y se podia pasar de los 40 sitios de la lista del inventario (memoria pisada). Mismo oro, al monedero.
+	{
+		int n64Total = 0;
+		for (const int8_t itemIndex : player.InvGrid)
+			if (itemIndex == 0)
+				n64Total += (5 * leveltype) + rng.generateRnd(10 * leveltype);
+		AddGoldToInventory(player, n64Total);
+		player._pGold = CalculateGold(player);
+	}
+#else
 	for (int8_t &itemIndex : player.InvGrid) {
 		if (itemIndex == 0) {
 			Item &goldItem = player.InvList[player._pNumInv];
@@ -2683,6 +2695,7 @@ void OperateShrineSpiritual(DiabloGenerator &rng, Player &player)
 			player._pGold += goldItem._ivalue;
 		}
 	}
+#endif
 
 	InitDiabloMsg(EMSG_SHRINE_SPIRITUAL);
 }

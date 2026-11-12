@@ -52,6 +52,9 @@
 #include "utils/utf8.hpp"
 
 namespace devilution {
+#ifdef __N64__
+constexpr int N64PouchStack = 60000; // v0.9.0: oro por monton del monedero
+#endif
 
 bool invflag;
 
@@ -1423,7 +1426,7 @@ bool CanFitItemInInventory(const Player &player, const Item &item)
 		if (player._pNumInv < InventoryGridCells)
 			return true;
 		for (int i = 0; i < player._pNumInv; i++)
-			if (player.InvList[i]._itype == ItemType::Gold && player.InvList[i]._ivalue < MaxGold)
+			if (player.InvList[i]._itype == ItemType::Gold && player.InvList[i]._ivalue < N64PouchStack)
 				return true;
 		return false;
 	}
@@ -1537,6 +1540,25 @@ void N64PouchSync(Player &player)
 		if (idx < player._pNumInv && player.InvList[idx]._itype == ItemType::Gold)
 			cell = 0;
 	}
+	// v0.9.0: juntar el oro en los menos montones posibles (libera sitios de la lista del inventario)
+	for (int i = 0; i < player._pNumInv; i++) {
+		Item &dst = player.InvList[i];
+		if (dst._itype != ItemType::Gold || dst._ivalue >= N64PouchStack)
+			continue;
+		for (int j = player._pNumInv - 1; j > i && dst._ivalue < N64PouchStack; j--) {
+			Item &src = player.InvList[j];
+			if (src._itype != ItemType::Gold)
+				continue;
+			const int move = std::min(src._ivalue, N64PouchStack - dst._ivalue);
+			dst._ivalue += move;
+			src._ivalue -= move;
+			SetPlrHandGoldCurs(dst);
+			if (src._ivalue <= 0)
+				player.RemoveInvItem(j, false);
+			else
+				SetPlrHandGoldCurs(src);
+		}
+	}
 }
 
 void N64PouchDraw(const Surface &out, Player &player)
@@ -1551,11 +1573,11 @@ void N64PouchDraw(const Surface &out, Player &player)
 
 int RoomForGold()
 {
-	int amount = (InventoryGridCells - MyPlayer->_pNumInv) * MaxGold;
+	int amount = (InventoryGridCells - MyPlayer->_pNumInv) * N64PouchStack;
 	for (int i = 0; i < MyPlayer->_pNumInv; i++) {
 		const Item &goldItem = MyPlayer->InvList[i];
-		if (goldItem._itype == ItemType::Gold && goldItem._ivalue < MaxGold)
-			amount += MaxGold - goldItem._ivalue;
+		if (goldItem._itype == ItemType::Gold && goldItem._ivalue < N64PouchStack)
+			amount += N64PouchStack - goldItem._ivalue;
 	}
 	return amount;
 }
@@ -1586,6 +1608,27 @@ int RoomForGold()
 
 int AddGoldToInventory(Player &player, int value)
 {
+#ifdef __N64__
+	// v0.9.0: los montones del monedero no ocupan casillas pero si sitios de la lista del inventario (40 en
+	// total). Con montones de 5000 mucho oro llenaba la lista ("inventario lleno" con casillas libres). Ahora
+	// cada monton guarda hasta 60000 (cabe en los 16 bits con que se guarda el oro en el heroe).
+	for (int i = 0; i < player._pNumInv && value > 0; i++) {
+		Item &goldItem = player.InvList[i];
+		if (goldItem._itype != ItemType::Gold || goldItem._ivalue >= N64PouchStack)
+			continue;
+		const int add = std::min(value, N64PouchStack - goldItem._ivalue);
+		goldItem._ivalue += add;
+		value -= add;
+		SetPlrHandGoldCurs(goldItem);
+	}
+	while (value > 0 && player._pNumInv < InventoryGridCells) {
+		Item &goldItem = player.InvList[player._pNumInv];
+		MakeGoldStack(goldItem, std::min(value, N64PouchStack));
+		player._pNumInv++;
+		value -= goldItem._ivalue;
+	}
+	return value;
+#endif
 	// Top off existing piles
 	for (int i = 0; i < player._pNumInv && value > 0; i++) {
 		Item &goldItem = player.InvList[i];
