@@ -12125,3 +12125,23 @@ msgstr "runa de piedra"
 #: Source/utils/format_int.cpp:28 Source/utils/format_int.cpp:64
 msgid ","
 msgstr ","
+
+#. NDS-GUARIDA11: frase recuperada (Wirt21)
+msgid "Here over... pssst... Chamber butcher the from spell portal town the cast! Saying am I what see?!"
+msgstr "Aquí por... pssst... ¡Carnicero del cámara la desde pueblo al portal de hechizo el lanza! ¿¡Digo te que lo ves!?"
+
+#. NDS-GUARIDA11: frase recuperada (Wirt22)
+msgid "Yet out it figured you haven't?! Understand could you even so simple it make to tried I! Chamber butcher the from spell portal town the cast!"
+msgstr "¿¡Entendido has lo no todavía!? ¡Entenderías lo tú hasta que fácil tan ponerlo intenté! ¡Carnicero del cámara la desde pueblo al portal de hechizo el lanza!"
+
+#. NDS-GUARIDA11: frase recuperada (Ogden9)
+msgid "Wirt is talking backwards again? I hate it when he does that! I don't have time to help you decipher his riddle, but I will tell you one thing - don't get involved with that rapscallion."
+msgstr "¿Wirt vuelve a hablar al revés? ¡Odio que haga eso! No tengo tiempo de ayudarte a descifrar su acertijo, pero te diré una cosa: no te metas en líos con ese granuja."
+
+#. NDS-GUARIDA11: frase recuperada (Adria11)
+msgid "The lair of the Butcher is steeped in demonic power, and casting any spell or passage there could cause unexpected results."
+msgstr "La guarida del Carnicero está impregnada de poder demoníaco; lanzar cualquier hechizo o abrir cualquier paso allí podría tener resultados inesperados."
+
+#. NDS-GUARIDA12: frase recuperada (Farnham11)
+msgid "(Crying) No, you can't make me go back there. I won't let you take me. Too much pain, too many dead. Can't... get the blood out of my eyes... my mouth... *wails*"
+msgstr "(Llorando) No, no puedes obligarme a volver allí. No dejaré que me lleves. Demasiado dolor, demasiados muertos. No puedo... quitarme la sangre de los ojos... de la boca... *gime*"

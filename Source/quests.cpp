@@ -146,6 +146,26 @@ void CheckQuests()
 		NetSendCmdQuest(true, quest);
 	}
 
+	{ /* NDS-GUARIDA9: portal rojo a la guarida del Carnicero */
+		Quest &butcherQuest = Quests[Q_BUTCHER];
+		if (!setlevel && currlevel == butcherQuest._qlevel && butcherQuest._qvar2 >= 1 && butcherQuest._qactive != QUEST_DONE /* NDS-GUARIDA10 */
+		    && butcherQuest.position != Point { 0, 0 }) {
+			bool shown = false;
+			for (auto &m : Missiles) {
+				if (m._mitype == MissileID::RedPortal && m.position.tile == butcherQuest.position) {
+					shown = true;
+					break;
+				}
+			}
+			if (!shown)
+				AddMissile(butcherQuest.position, butcherQuest.position, Direction::South, MissileID::RedPortal, TARGET_MONSTERS, *MyPlayer, 0, 0);
+			if (MyPlayer->_pmode == PM_STAND && MyPlayer->position.tile == butcherQuest.position) {
+				setlvltype = DTYPE_CATHEDRAL;
+				StartNewLvl(*MyPlayer, WM_DIABSETLVL, SL_BUTCHERLAIR);
+				return;
+			}
+		}
+	}
 	if (UseMultiplayerQuests()) {
 		return;
 	}
@@ -297,6 +317,8 @@ int GetMapReturnLevel()
 		return Quests[Q_PWATER]._qlevel;
 	case SL_VILEBETRAYER:
 		return Quests[Q_BETRAYER]._qlevel;
+	case SL_BUTCHERLAIR: /* NDS-GUARIDA */
+		return Quests[Q_BUTCHER]._qlevel;
 	default:
 		return 0;
 	}
@@ -318,6 +340,8 @@ Point GetMapReturnPosition()
 		return Quests[Q_PWATER].position + Direction::SouthWest;
 	case SL_VILEBETRAYER:
 		return Quests[Q_BETRAYER].position + Direction::South;
+	case SL_BUTCHERLAIR: /* NDS-GUARIDA9: vuelta junto al portal rojo, no encima */
+		return Quests[Q_BUTCHER].position + Direction::South;
 	default:
 		return GetTowner(TOWN_DRUNK)->position + Direction::SouthEast;
 	}

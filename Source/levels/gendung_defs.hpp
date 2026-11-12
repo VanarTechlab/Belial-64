@@ -51,6 +51,7 @@ enum _setlevels : int8_t {
 	SL_MAZE,
 	SL_POISONWATER,
 	SL_VILEBETRAYER,
+	SL_BUTCHERLAIR, /* NDS-GUARIDA: guarida del Carnicero */
 
 	SL_ARENA_CHURCH,
 	SL_ARENA_HELL,

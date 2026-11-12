@@ -35,6 +35,7 @@
 #include "inv.h"
 #include "levels/trigs.h"
 #include "missiles.h"
+#include "quests.h" /* NDS-GUARIDA3 */
 #include "options.h"
 #include "qol/itemlabels.h"
 #include "qol/stash.h"
@@ -653,7 +654,12 @@ void CheckRportal()
 			if (EntranceBoundaryContains(missile.position.tile, cursPosition)) {
 				trigflag = true;
 				InfoString = _("Portal to");
-				AddInfoBoxString(!setlevel ? _("The Unholy Altar") : _("level 15"));
+				if (setlevel && setlvlnum == SL_BUTCHERLAIR) /* NDS-GUARIDA3: vuelta al nivel del Carnicero */
+					AddInfoBoxString(std::string(GetLanguageCode().substr(0, 2) == "es" ? "nivel " : "level ") + std::to_string(Quests[Q_BUTCHER]._qlevel));
+				else if (!setlevel && currlevel == Quests[Q_BUTCHER]._qlevel) /* NDS-GUARIDA9 */
+					AddInfoBoxString(std::string_view(GetLanguageCode().substr(0, 2) == "es" ? "la guarida del Carnicero" : "the Butcher's Lair")); /* NDS-GUARIDA9B */
+				else
+					AddInfoBoxString(!setlevel ? _("The Unholy Altar") : _("level 15"));
 				cursPosition = missile.position.tile;
 			}
 		}

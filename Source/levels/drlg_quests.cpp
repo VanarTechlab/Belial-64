@@ -19,6 +19,8 @@ void DrawButcher()
 {
 	const Point position = SetPiece.position.megaToWorld() + Displacement { 3, 3 };
 	DRLG_RectTrans({ position, { 7, 7 } });
+	if (Quests[Q_BUTCHER]._qvar2 == 0) /* NDS-GUARIDA10 / NDS-GUARIDA9: si ya hay portal rojo, se queda donde se abrio */
+		Quests[Q_BUTCHER].position = SetPiece.position.megaToWorld() + Displacement { 6, 6 }; /* NDS-GUARIDA: centro de su sala */
 }
 
 void DrawSkelKing(quest_id q, Point position)

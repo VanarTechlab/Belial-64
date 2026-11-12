@@ -431,6 +431,8 @@ Point GetUniqueMonstPosition(UniqueMonsterType uniqindex)
 	case UniqueMonsterType::BlackJade:
 		return SetPiece.position.megaToWorld() + Displacement { 5, 9 };
 	case UniqueMonsterType::Butcher:
+		if (setlevel) /* NDS-GUARIDA: junto a su mesa */
+			return { 30, 30 }; /* NDS-GUARIDA5: sobre la sangre, junto a la mesa */
 		return SetPiece.position.megaToWorld() + Displacement { 4, 4 };
 	case UniqueMonsterType::NaKrul:
 		if (UberRow == 0 || UberCol == 0) {
@@ -538,7 +540,7 @@ std::expected<void, std::string> PlaceUniqueMonsters()
 std::expected<void, std::string> PlaceQuestMonsters()
 {
 	if (!setlevel) {
-		if (Quests[Q_BUTCHER].IsAvailable()) {
+		if (Quests[Q_BUTCHER].IsAvailable() && gbIsMultiplayer) { /* NDS-GUARIDA13: en un jugador el Carnicero solo esta en su guarida */
 			RETURN_IF_ERROR(PlaceUniqueMonst(UniqueMonsterType::Butcher, 0, 0));
 		}
 
@@ -606,6 +608,9 @@ std::expected<void, std::string> PlaceQuestMonsters()
 		}
 	} else if (setlvlnum == SL_SKELKING) {
 		RETURN_IF_ERROR(PlaceUniqueMonst(UniqueMonsterType::SkeletonKing, 0, 0));
+	} else if (setlvlnum == SL_BUTCHERLAIR) { /* NDS-GUARIDA */
+		RETURN_IF_ERROR(AddMonsterType(UniqueMonsterType::Butcher, PLACE_UNIQUE));
+		RETURN_IF_ERROR(PlaceUniqueMonst(UniqueMonsterType::Butcher, 0, 0));
 	} else if (setlvlnum == SL_VILEBETRAYER) {
 		RETURN_IF_ERROR(AddMonsterType(UniqueMonsterType::Lazarus, PLACE_UNIQUE));
 		RETURN_IF_ERROR(AddMonsterType(UniqueMonsterType::RedVex, PLACE_UNIQUE));
@@ -3356,7 +3361,7 @@ std::expected<void, std::string> PrepareUniqueMonst(Monster &monster, UniqueMons
 	monster.reducePlayerMaxMana = uniqueMonsterData.reducePlayerMaxMana;
 	monster.resistance = uniqueMonsterData.mMagicRes;
 	monster.talkMsg = uniqueMonsterData.mtalkmsg;
-	if (monsterType == UniqueMonsterType::HorkDemon)
+	if (monsterType == UniqueMonsterType::HorkDemon || (setlevel && setlvlnum == SL_BUTCHERLAIR)) /* NDS-GUARIDA3: sin luz propia en la guarida */
 		monster.lightId = NO_LIGHT;
 	else
 		monster.lightId = AddLight(monster.position.tile, 3);
@@ -3464,7 +3469,7 @@ std::expected<void, std::string> GetLevelMTypes()
 	}
 
 	if (!setlevel) {
-		if (Quests[Q_BUTCHER].IsAvailable())
+		if (Quests[Q_BUTCHER].IsAvailable() && gbIsMultiplayer) /* NDS-GUARIDA13 */
 			RETURN_IF_ERROR(AddMonsterType(MT_CLEAVER, PLACE_SPECIAL));
 		if (Quests[Q_GARBUD].IsAvailable())
 			RETURN_IF_ERROR(AddMonsterType(UniqueMonsterType::Garbud, PLACE_UNIQUE));
@@ -4658,6 +4663,10 @@ void ProcessMonsters()
 		const bool isMonsterVisible = IsTileVisible(monster.position.tile);
 		if (isMonsterVisible && monster.activeForTicks == 0) {
 			if (monster.type().type == MT_CLEAVER) {
+				if (setlevel && setlvlnum == SL_BUTCHERLAIR && !gbIsMultiplayer && Quests[Q_BUTCHER]._qvar2 == 1) { /* NDS-GUARIDA10: escena oculta, una vez */
+					Quests[Q_BUTCHER]._qvar2 = 2;
+					PlayInGameMovie("gendata\\carnicero.smk");
+				}
 				PlaySFX(SfxID::ButcherGreeting);
 			}
 			if (monster.type().type == MT_NAKRUL) {

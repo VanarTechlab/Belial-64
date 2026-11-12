@@ -31,6 +31,7 @@ const char *const QuestLevelNames[] = {
 	N_("Maze"),
 	N_("Poisoned Water Supply"),
 	N_("Archbishop Lazarus' Lair"),
+	N_("Butcher's Lair"), /* NDS-GUARIDA */
 	N_("Church Arena"),
 	N_("Hell Arena"),
 	N_("Circle of Life Arena"),
@@ -154,6 +155,14 @@ std::expected<void, std::string> LoadSetMap()
 		LoadPaletteAndInitBlending("levels\\l1data\\l1_2.pal");
 		AddVileObjs();
 		InitNoTriggers();
+		break;
+	case SL_BUTCHERLAIR: /* NDS-GUARIDA: mapa propio con piezas de la Catedral */
+		setlvltype = DTYPE_CATHEDRAL;
+		RETURN_IF_ERROR(LoadCustomMap("nds\\guarida.dun", { 23, 30 }));
+		trigflag = false;
+		numtrigs = 1;
+		trigs[0].position = { 21, 32 }; /* portal rojo de vuelta (NDS-GUARIDA5) */
+		trigs[0]._tmsg = WM_DIABRTNLVL;
 		break;
 	case SL_ARENA_CHURCH:
 		RETURN_IF_ERROR(LoadArenaMap("arena\\church.dun", { 29, 22 }, { 28, 20 }));

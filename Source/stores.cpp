@@ -32,6 +32,7 @@
 #include "qol/stash.h"
 #include "qol/visual_store.h"
 #include "tables/townerdat.hpp"
+#include "tables/textdat.h" /* NDS-GUARIDA11 */
 #include "towners.h"
 #include "utils/format.hpp"
 #include "utils/format_int.hpp"
@@ -1999,7 +2000,33 @@ void TalkEnter()
 	for (auto &quest : Quests) {
 		if (quest._qactive == QUEST_ACTIVE && GetTownerQuestDialog(TownerId, quest._qidx) != TEXT_NONE && quest._qlog) {
 			if (sn == CurrentTextLine) {
-				InitQTextMsg(GetTownerQuestDialog(TownerId, quest._qidx));
+				{
+					_speech_id ndsS = GetTownerQuestDialog(TownerId, quest._qidx);
+					if (quest._qidx == Q_BUTCHER) { /* NDS-GUARIDA11: dialogos recuperados, alternando con el original */
+						static uint8_t ndsCnt[64];
+						const char *ndsAlt[2] = { nullptr, nullptr };
+						if (TownerId == TOWN_PEGBOY) {
+							ndsAlt[0] = "NDS_BUTCH_WIRT21";
+							ndsAlt[1] = "NDS_BUTCH_WIRT22";
+						} else if (TownerId == TOWN_TAVERN) {
+							ndsAlt[0] = "NDS_BUTCH_OGDEN9";
+						} else if (TownerId == TOWN_WITCH) {
+							ndsAlt[0] = "NDS_BUTCH_ADRIA11";
+						} else if (TownerId == TOWN_DRUNK) { /* NDS-GUARIDA12 */
+							ndsAlt[0] = "NDS_BUTCH_FARNHAM11";
+						}
+						if (ndsAlt[0] != nullptr) {
+							const int ndsN = ndsAlt[1] != nullptr ? 3 : 2;
+							const int ndsK = ndsCnt[static_cast<int>(TownerId) & 63]++ % ndsN;
+							if (ndsK > 0) {
+								const auto ndsR = ParseSpeechId(ndsAlt[ndsK - 1]);
+								if (ndsR.has_value() && *ndsR != TEXT_NONE)
+									ndsS = *ndsR;
+							}
+						}
+					}
+					InitQTextMsg(ndsS);
+				}
 			}
 			sn += la;
 		}

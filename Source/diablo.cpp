@@ -1284,7 +1284,7 @@ void DiabloInitScreen()
 void SetApplicationVersions()
 {
 #ifdef __N64__
-	*BufCopy(gszProductName, "Belial 64 v0.9.0 prueba 1 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
+	*BufCopy(gszProductName, "Belial 64 v0.9.0 prueba 2 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
 #else
 	*BufCopy(gszProductName, PROJECT_NAME, " v", PROJECT_VERSION) = '\0';
 #endif
@@ -3535,6 +3535,8 @@ std::expected<void, std::string> LoadGameLevelSetLevel(bool firstflag, lvl_entry
 
 	PlayDungMsgs();
 	InitMissiles();
+	if (setlvlnum == SL_BUTCHERLAIR) /* NDS-GUARIDA: portal rojo de vuelta */
+		AddMissile({ 21, 32 }, { 21, 32 }, Direction::South, MissileID::RedPortal, TARGET_MONSTERS, myPlayer, 0, 0);
 	IncProgress();
 	return {};
 }

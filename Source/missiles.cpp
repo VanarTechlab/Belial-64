@@ -41,6 +41,8 @@
 #include "levels/gendung.h"
 #include "levels/gendung_defs.hpp"
 #include "msg.h"
+#include "levels/dun_tile_data.hpp" /* NDS-GUARIDA9: SetPiece */
+#include "quests.h" /* NDS-GUARIDA9 */
 #include "multi.h"
 #include "objects.h"
 #include "player.h"
@@ -2107,6 +2109,24 @@ void AddTownPortal(Missile &missile, AddMissileParameter &parameter)
 		}
 	}
 
+	{ /* NDS-GUARIDA9: Portal dentro de la sala del Carnicero (nivel 2) = portal rojo a su guarida */
+		Quest &butcherQuest = Quests[Q_BUTCHER];
+		const Player *caster = missile.sourcePlayer();
+		if (!gbIsMultiplayer /* NDS-GUARIDA13: solo un jugador */ && !missile._miDelFlag && caster != nullptr && !setlevel && leveltype != DTYPE_TOWN && currlevel == butcherQuest._qlevel
+		    && butcherQuest.IsAvailable() && butcherQuest._qactive != QUEST_DONE && butcherQuest._qvar2 == 0 /* NDS-GUARIDA10 */
+		    && SetPiece.size.width > 0) {
+			const Point room = SetPiece.position.megaToWorld();
+			const Point p = caster->position.tile;
+			if (p.x >= room.x && p.y >= room.y && p.x < room.x + SetPiece.size.width * 2 && p.y < room.y + SetPiece.size.height * 2) {
+				butcherQuest.position = missile.position.tile;
+				butcherQuest._qvar2 = 1;
+				if (caster == MyPlayer)
+					NetSendCmdQuest(true, butcherQuest);
+				missile._miDelFlag = true; /* sin portal azul: el rojo lo pone CheckQuests */
+				return;
+			}
+		}
+	}
 	missile.duration = 100;
 	missile.var1 = missile.duration - missile._miAnimLen;
 	for (auto &other : Missiles) {
