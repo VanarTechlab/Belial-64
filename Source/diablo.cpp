@@ -234,9 +234,6 @@ void FreeGame()
 	FreeGameMem();
 	stream_stop();
 	music_stop();
-#ifdef __N64__
-	n64_heap_dump("al salir de la partida"); // v0.9.0 (solo DIAG): que sigue reservado y trocea la memoria
-#endif
 }
 
 #ifdef __N64__
@@ -1292,7 +1289,7 @@ void DiabloInitScreen()
 void SetApplicationVersions()
 {
 #ifdef __N64__
-	*BufCopy(gszProductName, "Belial 64 v0.9.0 prueba 18 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
+	*BufCopy(gszProductName, "Belial 64 v0.9.0 prueba 19 - DevilutionX ", PROJECT_VERSION) = '\0'; // v0.8.5: version publicada
 #else
 	*BufCopy(gszProductName, PROJECT_NAME, " v", PROJECT_VERSION) = '\0';
 #endif
@@ -2934,6 +2931,7 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 		UnloadFonts();
 #ifdef __N64__
 		N64UseGameResolution(false);
+		n64_heap_dump("de vuelta en el menu"); // v0.9.0 (solo DIAG): que sigue reservado y trocea la memoria
 #endif
 
 		// If the player left the game into the main menu,
