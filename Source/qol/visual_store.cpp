@@ -4,6 +4,9 @@
  * Implementation of visual grid-based store UI.
  */
 #include "qol/visual_store.h"
+#ifdef __N64__
+#include "n64_town_gfx.hpp"
+#endif
 
 #include <algorithm>
 #include <cstdint>
@@ -44,10 +47,19 @@ int16_t pcursstorebtn = -1;
 
 namespace {
 
+#ifdef __N64__
+// v0.8.6 prueba 6: en el cartucho; los Owned solo si no caben alli
+OptionalOwnedClxSpriteList VisualStoreOwned[4];
+OptionalClxSpriteList VisualStorePanelArt;
+OptionalClxSpriteList VisualStoreNavButtonArt;
+OptionalClxSpriteList VisualStoreRepairAllButtonArt;
+OptionalClxSpriteList VisualStoreRepairButtonArt;
+#else
 OptionalOwnedClxSpriteList VisualStorePanelArt;
 OptionalOwnedClxSpriteList VisualStoreNavButtonArt;
 OptionalOwnedClxSpriteList VisualStoreRepairAllButtonArt;
 OptionalOwnedClxSpriteList VisualStoreRepairButtonArt;
+#endif
 
 int VisualStoreButtonPressed = -1;
 
@@ -210,10 +222,17 @@ void InitVisualStore()
 	if (HeadlessMode)
 		return;
 
+#ifdef __N64__
+	VisualStorePanelArt = N64TownList("data\\store.clx", VisualStoreOwned[0]);
+	VisualStoreNavButtonArt = N64TownList("data\\tabBtnUp.clx", VisualStoreOwned[1]);
+	VisualStoreRepairAllButtonArt = N64TownList("data\\repairAllBtn.clx", VisualStoreOwned[2]);
+	VisualStoreRepairButtonArt = N64TownList("data\\repairSingleBtn.clx", VisualStoreOwned[3]);
+#else
 	VisualStorePanelArt = LoadClx("data\\store.clx");
 	VisualStoreNavButtonArt = LoadClx("data\\tabBtnUp.clx");
 	VisualStoreRepairAllButtonArt = LoadClx("data\\repairAllBtn.clx");
 	VisualStoreRepairButtonArt = LoadClx("data\\repairSingleBtn.clx");
+#endif
 }
 
 void FreeVisualStoreGFX()
@@ -222,6 +241,10 @@ void FreeVisualStoreGFX()
 	VisualStorePanelArt = std::nullopt;
 	VisualStoreRepairAllButtonArt = std::nullopt;
 	VisualStoreRepairButtonArt = std::nullopt;
+#ifdef __N64__
+	for (auto &o : VisualStoreOwned)
+		o = std::nullopt;
+#endif
 }
 
 void OpenVisualStore(VisualStoreVendor vendor)

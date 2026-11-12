@@ -4,6 +4,10 @@
  * Implementation of monster functionality, AI, actions, spawning, loading, etc.
  */
 #include "monster.h"
+#ifdef __N64__
+#include "engine/load_clx.hpp"
+#include "n64_town_gfx.hpp"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -3577,7 +3581,20 @@ static_assert(sizeof(uintptr_t) == 4, "cabecera de 8 bytes: direccion + paleta")
 constexpr size_t N64HdrArenaSize = 40 * 1024;
 constexpr size_t N64PlrSlotSize = 1792;
 constexpr size_t N64PlrSlots = 9;
-alignas(16) uint8_t N64ClxArena[N64HdrArenaSize + N64PlrSlotSize * N64PlrSlots];
+// v0.8.6 prueba 6: zona para el pueblo (aldeanos, vaca, ventanas de alijo y tienda)
+constexpr size_t N64TownArenaSize = 8 * 1024;
+alignas(16) uint8_t N64ClxArena[N64HdrArenaSize + N64PlrSlotSize * N64PlrSlots + N64TownArenaSize];
+uint8_t *const N64TownArena = N64ClxArena + N64HdrArenaSize + N64PlrSlotSize * N64PlrSlots;
+size_t N64TownUsed = 0;
+uint8_t *N64TownAlloc(size_t n)
+{
+	n = (n + 7) & ~size_t { 7 };
+	if (N64TownUsed + n > N64TownArenaSize)
+		return nullptr;
+	uint8_t *p = N64TownArena + N64TownUsed;
+	N64TownUsed += n;
+	return p;
+}
 uint8_t *const N64HdrArena = N64ClxArena;
 size_t N64HdrUsed = 0;
 struct N64ArenaInit {
@@ -3790,6 +3807,80 @@ bool N64LoadPlayerSheetFromCart(const char *assetPath, const uint8_t *trnA, cons
 	outNumLists = static_cast<uint16_t>(numLists);
 	LogVerbose("N64: jugador {} en el cartucho (hueco {}, {} bytes)", assetPath, slot, N64PlrSlotUsed);
 	return true;
+}
+
+// v0.8.6 prueba 6: graficos del pueblo en el cartucho (como los monstruos). 'path' con extension .clx.
+// Devuelve la direccion en el cartucho y si es una hoja (varias listas) o una lista. 0 si no se pudo.
+namespace {
+uint8_t *N64CartClx(const char *path, uint16_t &numLists)
+{
+	const AssetRef ref = FindAsset(path);
+	uint32_t size = 0;
+	const uint32_t addr = ref.ok() ? n64_mon_copy(ref.path, &size) : 0;
+	if (addr == 0)
+		return nullptr;
+	const size_t mark = N64TownUsed;
+	const uint32_t first = N64ReadLE32(addr);
+	if (first * 4 + 8 <= size && N64ReadLE32(addr + first * 4 + 4) == size) {
+		numLists = 0; // una lista
+		uint8_t *list = N64BuildList(addr, size, nullptr, N64TownAlloc);
+		if (list == nullptr)
+			N64TownUsed = mark;
+		return list;
+	}
+	const uint32_t n = first / 4;
+	if (n == 0 || n > 16)
+		return nullptr;
+	uint8_t raw[64];
+	n64_mon_read(raw, addr, n * 4);
+	uint8_t *sheet = N64TownAlloc(n * 4);
+	if (sheet == nullptr)
+		return nullptr;
+	for (uint32_t k = 0; k < n; ++k) {
+		const uint32_t off = LoadLE32(&raw[k * 4]);
+		uint8_t *list = off < size ? N64BuildList(addr + off, size - off, nullptr, N64TownAlloc) : nullptr;
+		if (list == nullptr) {
+			N64TownUsed = mark;
+			return nullptr;
+		}
+		WriteLE32(&sheet[k * 4], static_cast<uint32_t>(list - sheet));
+	}
+	numLists = static_cast<uint16_t>(n);
+	return sheet;
+}
+} // namespace
+
+void N64TownGfxFree()
+{
+	N64TownUsed = 0;
+}
+
+OptionalClxSpriteList N64TownList(const char *path, OptionalOwnedClxSpriteList &fallback)
+{
+	fallback = std::nullopt;
+	uint16_t numLists = 0;
+	uint8_t *p = N64CartClx(path, numLists);
+	if (p != nullptr && numLists == 0) {
+		n64_mon_cache_prepare();
+		LogVerbose("N64: pueblo {} en el cartucho", path);
+		return ClxSpriteList { p };
+	}
+	fallback = LoadClx(path);
+	return ClxSpriteList { *fallback };
+}
+
+OptionalClxSpriteSheet N64TownSheet(const char *path, OptionalOwnedClxSpriteSheet &fallback)
+{
+	fallback = std::nullopt;
+	uint16_t numLists = 0;
+	uint8_t *p = N64CartClx(path, numLists);
+	if (p != nullptr && numLists > 0) {
+		n64_mon_cache_prepare();
+		LogVerbose("N64: pueblo {} en el cartucho ({} listas)", path, numLists);
+		return ClxSpriteSheet { p, numLists };
+	}
+	fallback = LoadClxSheet(path);
+	return ClxSpriteSheet { *fallback };
 }
 #endif
 

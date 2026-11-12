@@ -1,4 +1,8 @@
 #include "towners.h"
+#include "utils/str_cat.hpp"
+#ifdef __N64__
+#include "n64_town_gfx.hpp"
+#endif
 
 #include <algorithm>
 #include <cstdint>
@@ -24,6 +28,9 @@ namespace devilution {
 namespace {
 
 OptionalOwnedClxSpriteSheet CowSprites;
+#ifdef __N64__
+OptionalClxSpriteSheet N64CowSprites; // v0.8.6 prueba 6: en el cartucho
+#endif
 int CowMsg;
 int CowClicks;
 
@@ -107,6 +114,16 @@ void InitTownerInfo(Towner &towner, const TownerData &townerData, const TownerDa
 void LoadTownerAnimations(Towner &towner, const char *path, int frames, int delay)
 {
 	towner.ownedAnim = std::nullopt;
+#ifdef __N64__
+	// v0.8.6 prueba 6: la animacion queda en el cartucho; en la RAM solo la cabecera
+	{
+		char n64Path[64];
+		*BufCopy(n64Path, path, ".clx") = '\0';
+		const OptionalClxSpriteList n64List = N64TownList(n64Path, towner.ownedAnim);
+		NewTownerAnim(towner, *n64List, frames, delay);
+		return;
+	}
+#endif
 	towner.ownedAnim = LoadCel(path, towner._tAnimWidth);
 	NewTownerAnim(towner, *towner.ownedAnim, frames, delay);
 }
@@ -151,7 +168,11 @@ void InitCows(Towner &towner, const TownerDataEntry &entry)
 	towner._tAnimWidth = entry.animWidth;
 	towner.animOrder = {};
 
+	#ifdef __N64__
+	NewTownerAnim(towner, (*N64CowSprites)[static_cast<size_t>(entry.direction)], 12, 3);
+#else
 	NewTownerAnim(towner, (*CowSprites)[static_cast<size_t>(entry.direction)], 12, 3);
+#endif
 	towner._tAnimFrame = GenerateRnd(11);
 
 	const Point position = entry.position;
@@ -759,7 +780,9 @@ Towner *GetTowner(_talker_id type)
 
 void InitTowners()
 {
+#ifndef __N64__
 	assert(!CowSprites);
+#endif
 
 	// Load towner data from TSV files
 	LoadTownerData();
@@ -787,7 +810,11 @@ void InitTowners()
 		TownerLongNames.try_emplace(entry.type, entry.name);
 	}
 
+#ifdef __N64__
+	N64CowSprites = N64TownSheet("towners\\animals\\cow.clx", CowSprites);
+#else
 	CowSprites.emplace(LoadCelSheet("towners\\animals\\cow", 128));
+#endif
 
 	Towners.clear();
 	Towners.reserve(TownersDataEntries.size());
@@ -816,6 +843,10 @@ void FreeTownerGFX()
 		towner.ownedAnim = std::nullopt;
 	}
 	CowSprites = std::nullopt;
+#ifdef __N64__
+	N64CowSprites = std::nullopt;
+	N64TownGfxFree();
+#endif
 }
 
 void ProcessTowners()
@@ -865,7 +896,11 @@ void TalkToTowner(Player &player, int t)
 void UpdateGirlAnimAfterQuestComplete()
 {
 	Towner *girl = GetTowner(TOWN_GIRL);
+#ifdef __N64__
+	if (girl == nullptr)
+#else
 	if (girl == nullptr || !girl->ownedAnim)
+#endif
 		return; // Girl is not spawned in town yet
 	auto curFrame = girl->_tAnimFrame;
 	LoadTownerAnimations(*girl, "towners\\girl\\girls1", 20, 6);

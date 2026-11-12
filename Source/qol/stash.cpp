@@ -1,4 +1,7 @@
 #include "qol/stash.h"
+#ifdef __N64__
+#include "n64_town_gfx.hpp"
+#endif
 
 #include <algorithm>
 #include <cstdint>
@@ -59,8 +62,16 @@ constexpr Rectangle StashButtonRect[] = {
 	// clang-format on
 };
 
+#ifdef __N64__
+// v0.8.6 prueba 6: en el cartucho; los Owned solo si no caben alli
+OptionalOwnedClxSpriteList StashPanelArtOwned;
+OptionalOwnedClxSpriteList StashNavButtonArtOwned;
+OptionalClxSpriteList StashPanelArt;
+OptionalClxSpriteList StashNavButtonArt;
+#else
 OptionalOwnedClxSpriteList StashPanelArt;
 OptionalOwnedClxSpriteList StashNavButtonArt;
+#endif
 
 /**
  * @param page The stash page index.
@@ -275,13 +286,22 @@ void FreeStashGFX()
 {
 	StashNavButtonArt = std::nullopt;
 	StashPanelArt = std::nullopt;
+#ifdef __N64__
+	StashNavButtonArtOwned = std::nullopt;
+	StashPanelArtOwned = std::nullopt;
+#endif
 }
 
 void InitStash()
 {
 	if (!HeadlessMode) {
+#ifdef __N64__
+		StashPanelArt = N64TownList("data\\stash.clx", StashPanelArtOwned);
+		StashNavButtonArt = N64TownList("data\\stashnavbtns.clx", StashNavButtonArtOwned);
+#else
 		StashPanelArt = LoadClx("data\\stash.clx");
 		StashNavButtonArt = LoadClx("data\\stashnavbtns.clx");
+#endif
 	}
 }
 
