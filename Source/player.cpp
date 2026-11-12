@@ -1410,6 +1410,9 @@ void ValidatePlayer()
 			if (gbIsHellfire) {
 				maxGold *= 2;
 			}
+#ifdef __N64__
+			maxGold = 60000; // v0.9.0: montones del monedero (N64PouchStack en inv.cpp); antes los dejaba en 5000 y el resto se perdia
+#endif
 			if (myPlayer.InvList[i]._ivalue > maxGold) {
 				myPlayer.InvList[i]._ivalue = maxGold;
 			}
