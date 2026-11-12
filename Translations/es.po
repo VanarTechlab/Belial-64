@@ -12217,3 +12217,11 @@ msgstr "Andariel derrotada: +5 puntos de estadistica"
 #. NDS-SUCUBOS3
 msgid "Forest Lights"
 msgstr "Luces del Bosque"
+
+#. v0.9.0 (Belial 64): menu de Gillian, oro del monedero al alijo
+msgid "Deposit gold ({:s})"
+msgstr "Guardar oro ({:s})"
+
+#. v0.9.0 (Belial 64): menu de Gillian, oro del alijo al monedero
+msgid "Withdraw gold ({:s})"
+msgstr "Sacar oro ({:s})"

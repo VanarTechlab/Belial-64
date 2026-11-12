@@ -35,6 +35,7 @@
 #include "tables/textdat.h" /* NDS-GUARIDA11 */
 #include "towners.h"
 #include "utils/format.hpp"
+#include <limits>
 #include "utils/format_int.hpp"
 #include "utils/language.h"
 #include "utils/log.hpp"
@@ -1299,6 +1300,12 @@ void StartBarmaid()
 	AddSText(0, 9, _("Would you like to:"), UiFlags::ColorWhitegold | UiFlags::AlignCenter, false);
 	AddSText(0, 12, _("Talk to Gillian"), UiFlags::ColorBlue | UiFlags::AlignCenter, true);
 	AddSText(0, 14, _("Access Storage"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+#ifdef __N64__
+	// v0.9.0: con el mando no se puede coger el oro del monedero ni escribir cantidades: Gillian guarda o
+	// devuelve todo el oro desde este menu
+	AddSText(0, 15, FormatRuntime(_("Deposit gold ({:s})"), FormatInteger(CalculateGold(*MyPlayer))), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+	AddSText(0, 16, FormatRuntime(_("Withdraw gold ({:s})"), FormatInteger(Stash.gold)), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
+#endif
 	AddSText(0, 18, _("Say goodbye"), UiFlags::ColorWhite | UiFlags::AlignCenter, true);
 	AddSLine(5);
 	CurrentItemIndex = 20;
@@ -2147,6 +2154,39 @@ void BarmaidEnter()
 			FocusOnInventory();
 		}
 		break;
+#ifdef __N64__
+	case 15: { // v0.9.0: guardar todo el oro del monedero en el alijo
+		Player &myPlayer = *MyPlayer;
+		const int amount = CalculateGold(myPlayer);
+		if (amount > 0 && Stash.gold <= std::numeric_limits<int>::max() - amount) {
+			for (int i = myPlayer._pNumInv - 1; i >= 0; i--) {
+				if (myPlayer.InvList[i]._itype == ItemType::Gold)
+					myPlayer.RemoveInvItem(i, false);
+			}
+			myPlayer._pGold = CalculateGold(myPlayer);
+			Stash.gold += amount;
+			Stash.dirty = true;
+			PlaySFX(SfxID::ItemGold);
+		}
+		StartStore(TalkID::Barmaid);
+		CurrentTextLine = 15;
+		break;
+	}
+	case 16: { // v0.9.0: sacar del alijo todo el oro que quepa
+		Player &myPlayer = *MyPlayer;
+		const int amount = std::min(Stash.gold, RoomForGold());
+		if (amount > 0) {
+			const int left = AddGoldToInventory(myPlayer, amount);
+			Stash.gold -= amount - left;
+			Stash.dirty = true;
+			myPlayer._pGold = CalculateGold(myPlayer);
+			PlaySFX(SfxID::ItemGold);
+		}
+		StartStore(TalkID::Barmaid);
+		CurrentTextLine = 16;
+		break;
+	}
+#endif
 	case 18:
 		ActiveStore = TalkID::None;
 		break;
